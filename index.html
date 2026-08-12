@@ -38,18 +38,34 @@
           <button class="panel-close" id="admin-close" type="button" aria-label="Закрыть панель">×</button>
         </div>
         <form class="ctf-form" id="ctf-form">
-          <label>Регион<select id="ctf-region" required><option value="">Выберите регион</option></select></label>
-          <label>Город<input id="ctf-city" type="text" placeholder="Например, Казань" maxlength="80" required /></label>
-          <label>Название CTF<input id="ctf-name" type="text" placeholder="Название соревнования" maxlength="120" required /></label>
-          <div class="form-dates">
-            <label>Начало<input id="ctf-start" type="datetime-local" required /></label>
-            <label>Окончание<input id="ctf-end" type="datetime-local" required /></label>
-          </div>
+          <fieldset>
+            <legend><span>01</span> Место проведения</legend>
+            <label>Регион<select id="ctf-region" required><option value="">Выберите регион</option></select></label>
+            <label>Город<input id="ctf-city" type="text" placeholder="Например, Казань" maxlength="80" autocomplete="address-level2" required /></label>
+          </fieldset>
+          <fieldset>
+            <legend><span>02</span> Событие</legend>
+            <label>Название CTF<input id="ctf-name" type="text" placeholder="Например, VolgaCTF 2026" maxlength="120" required /></label>
+            <div class="form-dates">
+              <label>Начало<input id="ctf-start" type="datetime-local" required /></label>
+              <label>Окончание<input id="ctf-end" type="datetime-local" required /></label>
+            </div>
+          </fieldset>
           <p class="form-error" id="form-error" role="alert"></p>
           <button class="submit-button" type="submit">Добавить на карту <span aria-hidden="true">→</span></button>
         </form>
+        <section class="demo-tools" aria-labelledby="demo-title">
+          <div><p class="eyebrow">Быстрая проверка</p><h3 id="demo-title">Тестовые флаги</h3></div>
+          <p>Разместит события в случайных регионах, чтобы проверить карту.</p>
+          <div class="demo-tools__action">
+            <label for="demo-count">Количество</label>
+            <input id="demo-count" type="number" min="1" max="50" value="12" />
+            <button id="demo-generate" type="button">Раскидать</button>
+          </div>
+        </section>
       </aside>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <output id="map-stats" class="sr-only" aria-live="polite">0 флагов</output>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
