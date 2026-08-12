@@ -8,6 +8,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import Event, EventSubmission
+from .regions import region_name
 
 
 @ensure_csrf_cookie
@@ -23,7 +24,7 @@ def events_api(request):
         events = events.filter(region_code=region)
     data = [{
         "id": event.id, "title": event.title, "regionCode": event.region_code,
-        "regionName": event.region_label, "city": event.city, "venue": event.venue,
+        "regionName": region_name(event.region_code), "city": event.city, "venue": event.venue,
         "startsAt": event.starts_at.isoformat(), "endsAt": event.ends_at.isoformat(),
         "format": event.get_format_display(), "description": event.description,
         "website": event.website, "organizer": event.organizer,

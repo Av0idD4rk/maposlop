@@ -19,7 +19,7 @@ class PublicApiTests(TestCase):
     def test_events_api_returns_upcoming_published_event(self):
         response = self.client.get(reverse("events-api"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["events"][0]["regionCode"], "77")
+        self.assertEqual(response.json()["events"][0]["regionCode"], "50")
 
     def test_submission_is_saved_for_moderation(self):
         start = timezone.now() + timedelta(days=4)

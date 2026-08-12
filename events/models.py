@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from .regions import region_name
+from .regions import canonical_region_code, region_name
 
 
 class Event(models.Model):
@@ -37,6 +37,7 @@ class Event(models.Model):
             raise ValidationError({"region_code": "Выберите регион из списка."})
 
     def save(self, *args, **kwargs):
+        self.region_code = canonical_region_code(self.region_code)
         self.region_label = region_name(self.region_code)
         super().save(*args, **kwargs)
 
@@ -81,6 +82,7 @@ class EventSubmission(models.Model):
             raise ValidationError({"region_code": "Выберите регион из списка."})
 
     def save(self, *args, **kwargs):
+        self.region_code = canonical_region_code(self.region_code)
         self.region_label = region_name(self.region_code)
         super().save(*args, **kwargs)
 
