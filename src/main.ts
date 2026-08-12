@@ -22,6 +22,81 @@ const mapStage = requireElement<HTMLElement>('#map-stage');
 const zoomInButton = requireElement<HTMLButtonElement>('#zoom-in');
 const zoomOutButton = requireElement<HTMLButtonElement>('#zoom-out');
 const zoomResetButton = requireElement<HTMLButtonElement>('#zoom-reset');
+const adminPanel = requireElement<HTMLElement>('#admin-panel');
+const adminToggle = requireElement<HTMLButtonElement>('#admin-toggle');
+const adminClose = requireElement<HTMLButtonElement>('#admin-close');
+const eventPanel = requireElement<HTMLElement>('#event-panel');
+const eventClose = requireElement<HTMLButtonElement>('#event-close');
+const eventRegion = requireElement<HTMLElement>('#event-region');
+const eventList = requireElement<HTMLElement>('#event-list');
+const form = requireElement<HTMLFormElement>('#ctf-form');
+const regionSelect = requireElement<HTMLSelectElement>('#ctf-region');
+const cityInput = requireElement<HTMLInputElement>('#ctf-city');
+const nameInput = requireElement<HTMLInputElement>('#ctf-name');
+const startInput = requireElement<HTMLInputElement>('#ctf-start');
+const endInput = requireElement<HTMLInputElement>('#ctf-end');
+const formError = requireElement<HTMLElement>('#form-error');
+const toast = requireElement<HTMLElement>('#toast');
+const demoCount = requireElement<HTMLInputElement>('#demo-count');
+const demoGenerate = requireElement<HTMLButtonElement>('#demo-generate');
+const mapStats = requireElement<HTMLOutputElement>('#map-stats');
+
+type CtfEvent = { id: string; regionId: string; city: string; name: string; start: string; end: string };
+const STORAGE_KEY = 'ctf-map-events-v1';
+let ctfEvents: CtfEvent[] = loadEvents();
+const flags = new Map<string, THREE.Group>();
+
+function loadEvents(): CtfEvent[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((item): item is CtfEvent => Boolean(item && typeof item === 'object' && 'regionId' in item)) : [];
+  } catch { return []; }
+}
+
+function setPanel(panel: HTMLElement, open: boolean): void {
+  panel.classList.toggle('is-open', open);
+  panel.setAttribute('aria-hidden', String(!open));
+  if (panel === adminPanel) adminToggle.setAttribute('aria-expanded', String(open));
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function eventStatus(event: CtfEvent): { label: string; className: string } {
+  const now = Date.now();
+  if (new Date(event.start).getTime() <= now && new Date(event.end).getTime() >= now) return { label: 'Идёт сейчас', className: 'is-live' };
+  if (new Date(event.end).getTime() < now) return { label: 'Завершён', className: 'is-past' };
+  return { label: 'Скоро', className: 'is-upcoming' };
+}
+
+function showRegionEvents(id: string): void {
+  const now = Date.now();
+  const events = ctfEvents.filter((event) => event.regionId === id).sort((a, b) => {
+    const rank = (item: CtfEvent) => new Date(item.end).getTime() < now ? 2 : new Date(item.start).getTime() <= now ? 0 : 1;
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff) return rankDiff;
+    return rank(a) === 2
+      ? new Date(b.start).getTime() - new Date(a.start).getTime()
+      : new Date(a.start).getTime() - new Date(b.start).getTime();
+  });
+  eventRegion.textContent = getRegion(id).name;
+  eventList.replaceChildren();
+  if (!events.length) {
+    const empty = document.createElement('p'); empty.className = 'event-empty'; empty.textContent = 'В этом регионе пока нет CTF.'; eventList.append(empty);
+  }
+  events.forEach((event) => {
+    const status = eventStatus(event);
+    const card = document.createElement('article'); card.className = 'event-card';
+    const meta = document.createElement('div'); meta.className = 'event-card__meta';
+    const badge = document.createElement('span'); badge.className = `status ${status.className}`; badge.textContent = status.label;
+    const city = document.createElement('span'); city.textContent = event.city;
+    const title = document.createElement('h3'); title.textContent = event.name;
+    const dates = document.createElement('p'); dates.textContent = `${formatDate(event.start)} — ${formatDate(event.end)}`;
+    meta.append(badge, city); card.append(meta, title, dates); eventList.append(card);
+  });
+  setPanel(adminPanel, false); setPanel(eventPanel, true);
+}
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const scene = new THREE.Scene();
@@ -85,10 +160,12 @@ const silhouetteMaterial = new THREE.MeshStandardMaterial({
 const meshes: RegionMesh[] = [];
 const meshById = new Map<string, RegionMesh[]>();
 const regionsById = new Map<string, Region>();
+const flagAnchorById = new Map<string, { point: THREE.Vector2; area: number }>();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const mapPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const targetViewportPosition = new THREE.Vector3();
+const normalizedMapSize = new THREE.Vector2(22.5, 11);
 let selectedId: string | null = null;
 let hoveredId: string | null = null;
 let mapReady = false;
@@ -106,8 +183,25 @@ function setZoom(nextZoom: number, anchor: THREE.Vector3 | null = null): void {
     targetViewportPosition.copy(anchor).addScaledVector(localAnchor, -next);
   }
   targetZoom = next;
+  clampViewport();
   const percent = Math.round(targetZoom * 100);
   zoomResetButton.setAttribute('aria-label', `Сбросить масштаб. Текущий масштаб ${percent} процентов`);
+}
+
+function getVisibleHalfExtents(): THREE.Vector2 {
+  const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * camera.position.z;
+  return new THREE.Vector2(halfHeight * camera.aspect, halfHeight);
+}
+
+/** Keep a useful part of Russia inside the viewport at every zoom level. */
+function clampViewport(): void {
+  const visible = getVisibleHalfExtents();
+  const scaledHalfWidth = normalizedMapSize.x * targetZoom * 0.5;
+  const scaledHalfHeight = normalizedMapSize.y * targetZoom * 0.5;
+  const maxX = Math.max(0, scaledHalfWidth - visible.x * 0.48);
+  const maxY = Math.max(0, scaledHalfHeight - visible.y * 0.48);
+  targetViewportPosition.x = THREE.MathUtils.clamp(targetViewportPosition.x, -maxX, maxX);
+  targetViewportPosition.y = THREE.MathUtils.clamp(targetViewportPosition.y, -maxY, maxY);
 }
 
 function resetViewport(): void {
@@ -167,6 +261,52 @@ function selectRegion(id: string): void {
   selectedId = id;
   announceRegion(getRegion(id));
   renderSelection();
+  showRegionEvents(id);
+}
+
+function syncFlags(): void {
+  flags.forEach((flag) => { mapGroup.remove(flag); flag.traverse((object) => { if (object instanceof THREE.Mesh) { object.geometry.dispose(); (object.material as THREE.Material).dispose(); } }); });
+  flags.clear();
+  const eventsByRegion = new Map<string, CtfEvent[]>();
+  ctfEvents.forEach((event) => eventsByRegion.set(event.regionId, [...(eventsByRegion.get(event.regionId) ?? []), event]));
+  eventsByRegion.forEach((events, id) => {
+    const regionMeshes = meshById.get(id); if (!regionMeshes?.length) return;
+    const anchor = flagAnchorById.get(id);
+    if (!anchor) return;
+    const regionFlags = new THREE.Group(); regionFlags.position.set(anchor.point.x, anchor.point.y, 1.35);
+    events.sort((a, b) => {
+      const priority = (item: CtfEvent) => eventStatus(item).className === 'is-live' ? 0 : eventStatus(item).className === 'is-upcoming' ? 1 : 2;
+      return priority(a) - priority(b) || new Date(a.start).getTime() - new Date(b.start).getTime();
+    }).forEach((event, index) => {
+      const status = eventStatus(event);
+      const total = events.length;
+      const columns = Math.min(total, 5);
+      const row = Math.floor(index / columns);
+      const itemsInRow = Math.min(columns, total - row * columns);
+      const column = index % columns - (itemsInRow - 1) / 2;
+      const flag = new THREE.Group();
+      flag.position.set(column * 17, row * 15 + Math.abs(column) * 1.8, index * 0.35);
+      const singleScale = status.className === 'is-live' ? 0.135 : status.className === 'is-upcoming' ? 0.12 : 0.1;
+      flag.scale.setScalar(total === 1 ? singleScale : singleScale * (index === 0 ? 0.86 : 0.72));
+      const red = status.className === 'is-past' ? 0x9f2732 : status.className === 'is-live' ? 0xff2438 : 0xe21f32;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 1.05, 36, 10), new THREE.MeshStandardMaterial({ color: 0xf3f7ff, metalness: 0.78, roughness: 0.22 }));
+      pole.rotation.x = Math.PI / 2; pole.position.z = 17;
+      pole.castShadow = true;
+      const clothGeometry = new THREE.BufferGeometry();
+      clothGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 24,0,1.6, 22,0,-11, 0,0,-10], 3));
+      clothGeometry.setIndex([0,1,2, 0,2,3]); clothGeometry.computeVertexNormals();
+      const cloth = new THREE.Mesh(clothGeometry, new THREE.MeshStandardMaterial({ color: red, emissive: red, emissiveIntensity: status.className === 'is-live' ? 0.42 : 0.2, roughness: 0.48, side: THREE.DoubleSide, depthTest: false }));
+      cloth.position.set(0, 0, 30); cloth.renderOrder = 12; cloth.castShadow = true;
+      const finial = new THREE.Mesh(new THREE.SphereGeometry(1.65, 12, 8), new THREE.MeshStandardMaterial({ color: 0xffd56a, emissive: 0x8e4b00, emissiveIntensity: 0.22, metalness: 0.65, roughness: 0.25 }));
+      finial.position.z = 35.5; finial.renderOrder = 13;
+      const beacon = new THREE.Mesh(new THREE.RingGeometry(5.8, 9, 28), new THREE.MeshBasicMaterial({ color: red, transparent: true, opacity: status.className === 'is-past' ? 0.24 : 0.6, side: THREE.DoubleSide, depthTest: false }));
+      beacon.position.z = 1; beacon.renderOrder = 11;
+      flag.add(pole, cloth, finial, beacon); regionFlags.add(flag);
+    });
+    mapGroup.add(regionFlags); flags.set(id, regionFlags);
+  });
+  mapStats.value = `${ctfEvents.length} флагов`;
+  mapStats.dataset.flagCount = String(ctfEvents.length);
 }
 
 function getViewportCenter(): THREE.Vector3 | null {
@@ -196,6 +336,7 @@ function focusRegion(id: string): void {
   const regionZoom = THREE.MathUtils.clamp(5.4 / extent, 1.3, 1.85);
   targetZoom = regionZoom;
   targetViewportPosition.copy(viewportCenter).addScaledVector(center, -regionZoom);
+  clampViewport();
   zoomResetButton.setAttribute('aria-label', `Сбросить масштаб. Текущий масштаб ${Math.round(regionZoom * 100)} процентов`);
 }
 
@@ -208,10 +349,16 @@ function normalizeMap(): void {
   // SVG has a downward Y axis; flip it once here to preserve north-up geography.
   mapGroup.scale.set(scale, -scale, scale);
   mapGroup.position.set(-center.x * scale, center.y * scale - 0.02, 0);
+  normalizedMapSize.set(size.x * scale, size.y * scale);
 }
 
 function addRegionGroup(id: string, name: string, paths: THREE.ShapePath[]): void {
-  const region: Region = { id, name, fragments: paths.length, color: colorForRegion(id) };
+  // Treat Saint Petersburg's inner contour as part of Leningrad Oblast on this CTF map.
+  if (id === '78') { id = '47'; name = 'Ленинградская область и Санкт-Петербург'; }
+  const existingRegion = regionsById.get(id);
+  const region: Region = existingRegion ?? { id, name, fragments: 0, color: colorForRegion(id) };
+  region.fragments += paths.length;
+  if (id === '47') region.name = 'Ленинградская область и Санкт-Петербург';
   regionsById.set(id, region);
   const material = new THREE.MeshStandardMaterial({
     color: region.color,
@@ -220,11 +367,12 @@ function addRegionGroup(id: string, name: string, paths: THREE.ShapePath[]): voi
     emissive: new THREE.Color(region.color).multiplyScalar(0.035),
     side: THREE.DoubleSide,
   });
-  const regionMeshes: RegionMesh[] = [];
+  const regionMeshes: RegionMesh[] = [...(meshById.get(id) ?? [])];
 
   paths.forEach((path) => {
     const shapes = SVGLoader.createShapes(path);
     shapes.forEach((shape) => {
+      updateFlagAnchor(id, shape);
       const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: 16,
         bevelEnabled: true,
@@ -256,6 +404,20 @@ function addRegionGroup(id: string, name: string, paths: THREE.ShapePath[]): voi
     });
   });
   if (regionMeshes.length) meshById.set(id, regionMeshes);
+}
+
+/** Pick the centre of the largest triangulated patch: unlike a bounding-box centre, it is always on the region. */
+function updateFlagAnchor(id: string, shape: THREE.Shape): void {
+  const contour = shape.getPoints(2);
+  const holes = shape.holes.map((hole) => hole.getPoints(2));
+  const vertices = [...contour, ...holes.flat()];
+  THREE.ShapeUtils.triangulateShape(contour, holes).forEach(([aIndex, bIndex, cIndex]) => {
+    const a = vertices[aIndex]; const b = vertices[bIndex]; const c = vertices[cIndex];
+    if (!a || !b || !c) return;
+    const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) * 0.5;
+    if (area <= (flagAnchorById.get(id)?.area ?? 0)) return;
+    flagAnchorById.set(id, { point: new THREE.Vector2((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3), area });
+  });
 }
 
 function addCountrySilhouette(pathData: string): void {
@@ -297,6 +459,10 @@ async function loadReferenceSvg(): Promise<void> {
     normalizeMap();
     addCountrySilhouette(silhouette);
     mapReady = true;
+    [...regionsById.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru')).forEach((region) => {
+      const option = document.createElement('option'); option.value = region.id; option.textContent = region.name; regionSelect.append(option);
+    });
+    syncFlags();
     const initial = new URLSearchParams(window.location.hash.slice(1)).get('region');
     if (initial && meshById.has(initial)) selectRegion(initial);
     else announceRegion(null);
@@ -373,6 +539,7 @@ function resize(): void {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height, false);
+  clampViewport();
 }
 
 new ResizeObserver(resize).observe(mapStage);
@@ -390,6 +557,7 @@ mapStage.addEventListener('pointermove', (event) => {
       const current = getWorldPointFromClient(event.clientX, event.clientY);
       if (current) {
         targetViewportPosition.add(panAnchor.clone().sub(current));
+        clampViewport();
         panAnchor = current;
       }
       mapStage.classList.add('map-stage--dragging');
@@ -446,6 +614,39 @@ mapStage.addEventListener('keydown', (event) => {
 zoomInButton.addEventListener('click', () => setZoom(targetZoom * 1.2, getViewportCenter()));
 zoomOutButton.addEventListener('click', () => setZoom(targetZoom / 1.2, getViewportCenter()));
 zoomResetButton.addEventListener('click', resetViewport);
+adminToggle.addEventListener('click', () => { setPanel(eventPanel, false); setPanel(adminPanel, true); window.setTimeout(() => regionSelect.focus(), 180); });
+adminClose.addEventListener('click', () => setPanel(adminPanel, false));
+eventClose.addEventListener('click', () => setPanel(eventPanel, false));
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setPanel(adminPanel, false); setPanel(eventPanel, false); } });
+form.addEventListener('submit', (event) => {
+  event.preventDefault(); formError.textContent = '';
+  const start = new Date(startInput.value); const end = new Date(endInput.value);
+  if (end <= start) { formError.textContent = 'Окончание должно быть позже начала.'; endInput.focus(); return; }
+  const item: CtfEvent = { id: crypto.randomUUID(), regionId: regionSelect.value, city: cityInput.value.trim(), name: nameInput.value.trim(), start: start.toISOString(), end: end.toISOString() };
+  ctfEvents.push(item); localStorage.setItem(STORAGE_KEY, JSON.stringify(ctfEvents)); syncFlags(); form.reset(); setPanel(adminPanel, false);
+  selectRegion(item.regionId); focusRegion(item.regionId); toast.textContent = `${item.name} добавлен на карту`; toast.classList.add('is-visible'); window.setTimeout(() => toast.classList.remove('is-visible'), 2600);
+});
+
+const demoCities = ['Москва', 'Санкт-Петербург', 'Казань', 'Екатеринбург', 'Новосибирск', 'Самара', 'Томск', 'Владивосток', 'Краснодар', 'Уфа'];
+demoGenerate.addEventListener('click', () => {
+  const count = THREE.MathUtils.clamp(Math.round(Number(demoCount.value) || 1), 1, 50);
+  const availableRegions = [...regionsById.values()];
+  if (!availableRegions.length) return;
+  const now = Date.now();
+  const generated = Array.from({ length: count }, (_, index): CtfEvent => {
+    const region = availableRegions[(index * 17 + 7) % availableRegions.length];
+    const startsAt = now + (index % 4 === 0 ? -2 : index + 1) * 86_400_000;
+    return {
+      id: crypto.randomUUID(), regionId: region.id, city: demoCities[index % demoCities.length],
+      name: `Test CTF #${index + 1}`, start: new Date(startsAt).toISOString(), end: new Date(startsAt + 2 * 86_400_000).toISOString(),
+    };
+  });
+  ctfEvents.push(...generated);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(ctfEvents));
+  syncFlags(); setPanel(adminPanel, false);
+  toast.textContent = `Добавлено тестовых CTF: ${count}`; toast.classList.add('is-visible');
+  window.setTimeout(() => toast.classList.remove('is-visible'), 2600);
+});
 
 resize();
 void loadReferenceSvg();
