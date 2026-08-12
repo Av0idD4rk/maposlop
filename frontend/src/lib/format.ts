@@ -1,0 +1,36 @@
+import type { CtfEvent } from './types';
+
+export function daysUntil(date: string): number {
+  return Math.max(0, (new Date(date).getTime() - Date.now()) / 86400000);
+}
+
+export function dateText(date: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(date));
+}
+
+export function shortDateText(date: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(new Date(date));
+}
+
+export function pulseClass(event: CtfEvent): string {
+  const days = daysUntil(event.startsAt);
+  return days <= 3 ? 'marker--hot' : days <= 14 ? 'marker--soon' : 'marker--calm';
+}
+
+export function nearestLabel(event: CtfEvent): string {
+  const days = Math.ceil(daysUntil(event.startsAt));
+  return days <= 0 ? 'Сегодня' : days === 1 ? 'Завтра' : `через ${days} дн.`;
+}
+
+export function eventCountLabel(count: number): string {
+  return count ? `${count} ближайших CTF` : 'Добавьте первый CTF';
+}
+
+export function eventWord(count: number): string {
+  return count === 1 ? 'ближайшее событие' : 'ближайших события';
+}

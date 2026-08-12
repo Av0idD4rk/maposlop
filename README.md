@@ -4,10 +4,10 @@
 
 ## Структура репозитория
 
-- `backend/` — Django-проект (`ctfmap/`, `events/`, `manage.py`, `requirements.txt`, `templates/`).
-- `frontend/` — Vite/TypeScript-приложение (`src/`, `public/`, `package.json`).
+- `backend/` — Django-проект (`ctfmap/`, `events/`, `manage.py`, `requirements.txt`).
+- `frontend/` — SvelteKit-приложение, собираемое как serverless SPA (`src/lib/components/`, `src/lib/*.ts`, `src/routes/`, `static/`, `package.json`).
 
-Сборка фронтенда (`npm run build`) кладёт бандл в `backend/static/dist/`, откуда его раздаёт Django.
+Frontend — SPA без сервера: `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`, `ssr = false`) собирает чистый HTML/JS/CSS без Node-рантайма. Сборка (`npm run build`) кладёт бандл в `backend/static/dist/`; Django-view `events.views.index` отдаёт готовый `index.html` как есть и выставляет CSRF-cookie. UI разложен по компонентам (`Topbar`, `MapStage`, `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`) и модулям `lib/` (`api.ts`, `stores.ts`, `regions.ts`, `format.ts`, `types.ts`) вместо одного файла `main.ts`.
 
 ## Локальный запуск
 
