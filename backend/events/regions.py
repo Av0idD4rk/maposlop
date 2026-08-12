@@ -18,7 +18,7 @@ def canonical_region_code(code):
 
 @lru_cache(maxsize=1)
 def region_choices():
-    svg = Path(settings.BASE_DIR) / "public" / "russia-regions.svg"
+    svg = Path(settings.FRONTEND_DIR) / "public" / "russia-regions.svg"
     root = ElementTree.parse(svg).getroot()
     namespace = "{http://www.w3.org/2000/svg}"
     regions = {}
