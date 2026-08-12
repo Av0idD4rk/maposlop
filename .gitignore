@@ -1,6 +1,10 @@
 # Dependencies and build output
 node_modules/
 dist/
+staticfiles/
+db.sqlite3
+__pycache__/
+*.py[cod]
 
 # Local diagnostics, screenshots, and downloaded reference material
 .*.png
