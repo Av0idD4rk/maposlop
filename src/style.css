@@ -1,0 +1,102 @@
+:root {
+  color: #f6fbff;
+  background: #06091f;
+  font-family: Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+.map-shell {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  background: #06091f;
+}
+
+.map-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(38, 89, 206, 0.19), transparent 48%),
+    radial-gradient(circle at 8% 92%, rgba(7, 192, 219, 0.1), transparent 26rem),
+    #06091f;
+}
+
+.map-stage {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+  outline: none;
+  touch-action: none;
+}
+
+.map-stage--hovering {
+  cursor: pointer;
+}
+
+.map-stage--dragging {
+  cursor: grabbing;
+}
+
+.map-stage:focus-visible {
+  outline: 3px solid #8be9ff;
+  outline-offset: -7px;
+}
+
+.map-stage__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.map-zoom {
+  position: fixed;
+  z-index: 3;
+  right: clamp(16px, 2vw, 32px);
+  bottom: clamp(16px, 2vw, 32px);
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgba(139, 233, 255, 0.37);
+  border-radius: 13px;
+  background: rgba(8, 18, 50, 0.72);
+  box-shadow: 0 14px 34px rgba(0, 2, 26, 0.34), inset 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.map-zoom__button {
+  width: 42px;
+  height: 38px;
+  border: 0;
+  border-bottom: 1px solid rgba(139, 233, 255, 0.2);
+  color: #c7f8ff;
+  background: transparent;
+  cursor: pointer;
+  font: 600 23px/1 Arial, sans-serif;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.map-zoom__button:last-child {
+  border-bottom: 0;
+}
+
+.map-zoom__button:nth-child(2) {
+  font-size: 18px;
+}
+
+.map-zoom__button:hover,
+.map-zoom__button:focus-visible {
+  color: #fff;
+  background: rgba(29, 211, 255, 0.24);
+  outline: none;
+}

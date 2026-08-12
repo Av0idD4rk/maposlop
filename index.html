@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Интерактивная объёмная карта регионов России" />
+    <title>3D-карта регионов России</title>
+  </head>
+  <body>
+    <main class="map-shell">
+      <div
+        class="map-stage"
+        id="map-stage"
+        role="application"
+        aria-label="Интерактивная карта регионов России. Наведите курсор на регион или выберите его."
+      ></div>
+      <nav class="map-zoom" aria-label="Масштаб карты">
+        <button class="map-zoom__button" id="zoom-in" type="button" aria-label="Увеличить карту">+</button>
+        <button class="map-zoom__button" id="zoom-reset" type="button" aria-label="Сбросить масштаб">⌾</button>
+        <button class="map-zoom__button" id="zoom-out" type="button" aria-label="Уменьшить карту">−</button>
+      </nav>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

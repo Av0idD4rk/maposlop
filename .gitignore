@@ -1,0 +1,16 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Local diagnostics, screenshots, and downloaded reference material
+.*.png
+.*.gif
+.commons-*
+.reference-*
+vite.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
