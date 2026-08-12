@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+:root {
+  color: #e4edf5;
+  background: #050819;
+  font-family: 'IBM Plex Sans', Arial, sans-serif;
+  font-synthesis: none;
+  --cyan: #39e7ff;
+  --cyan-2: #00b8db;
+  --panel: #081127;
+  --line: rgba(112, 218, 255, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  background: #050819;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 99;
+  top: -80px;
+  left: 20px;
+  padding: 12px 18px;
+  color: #03101b;
+  background: #7bf2ff;
+  border-radius: 8px;
+}
+
+.skip-link:focus {
+  top: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 13px;
+  color: var(--cyan);
+  font: 600 11px/1.4 'IBM Plex Mono';
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 19px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: #dffbff;
+  background: none;
+  cursor: pointer;
+  font: 500 10px 'IBM Plex Mono';
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.button:active {
+  transform: translate(1px, 1px);
+}
+
+.button--primary {
+  border-color: var(--cyan);
+  color: #dffbff;
+  background: rgba(25, 197, 221, 0.09);
+  box-shadow: inset 3px 0 var(--cyan);
+}
+
+.button--primary:hover {
+  color: #031018;
+  background: var(--cyan);
+  box-shadow: none;
+}
+
+.button--ghost {
+  border-color: #365268;
+  background: transparent;
+}
+
+.button--ghost:hover {
+  border-color: var(--cyan);
+  background: transparent;
+}
+
+.button--wide {
+  width: 100%;
+  justify-content: space-between;
+  padding-inline: 22px;
+  border-radius: 7px;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

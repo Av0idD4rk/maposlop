@@ -1,8 +1,8 @@
 import json
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
@@ -10,10 +10,24 @@ from django.views.decorators.http import require_GET, require_POST
 from .models import Event, EventSubmission
 from .regions import region_name
 
+FRONTEND_INDEX = settings.BASE_DIR / "static" / "dist" / "index.html"
+
 
 @ensure_csrf_cookie
 def index(request):
-    return render(request, "index.html")
+    """Serve the prebuilt SvelteKit SPA shell (static/dist/index.html).
+
+    The frontend is a serverless static build (adapter-static, SPA fallback);
+    Django's only job here is to hand back that file and set the CSRF cookie.
+    """
+    try:
+        html = FRONTEND_INDEX.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return HttpResponse(
+            "Frontend build not found. Run `npm install && npm run build` in frontend/.",
+            status=503,
+        )
+    return HttpResponse(html)
 
 
 @require_GET

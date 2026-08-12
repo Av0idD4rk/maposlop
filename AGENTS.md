@@ -2,7 +2,7 @@
 
 ## Назначение проекта
 
-Это CTF-карта России: Django хранит и модерирует соревнования, Three.js/TypeScript отображает их на интерактивной карте. Продукт должен помогать школьникам и начинающим командам находить доступные CTF, особенно за пределами крупнейших городов.
+Это CTF-карта России: Django хранит и модерирует соревнования, SvelteKit-SPA (Three.js внутри компонента карты) отображает их на интерактивной карте. Продукт должен помогать школьникам и начинающим командам находить доступные CTF, особенно за пределами крупнейших городов.
 
 Приоритеты при изменениях:
 
@@ -18,16 +18,16 @@
 
 - `backend/ctfmap/` — настройки и URL Django-проекта.
 - `backend/events/` — модели, admin, формы, API, миграции и management commands.
-- `backend/templates/index.html` — серверный HTML главной страницы.
+- `backend/events/views.index` — читает собранный `backend/static/dist/index.html` и отдаёт его как есть (с `@ensure_csrf_cookie`); серверного HTML-шаблона для главной страницы больше нет.
 - `backend/manage.py` и `backend/requirements.txt` — точка входа и Python-зависимости.
-- `frontend/src/main.ts` — текущая клиентская логика Three.js и UI; при развитии разделять на небольшие модули.
-- `frontend/src/style.css` — стили интерфейса.
-- `frontend/src/regions.ts` — типы/цвета регионов.
-- `frontend/public/russia-regions.svg` — исходная геометрия карты.
-- `frontend/vite.config.ts` — сборка frontend в `backend/static/dist/`.
+- `frontend/src/routes/+page.svelte` — корневая страница, собирает компоненты из `frontend/src/lib/components/`.
+- `frontend/src/lib/components/` — по компоненту на область UI: `Topbar`, `MapStage` (Three.js-рендер, поинтеры, зум, маркеры), `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`.
+- `frontend/src/lib/{api,stores,regions,format,types}.ts` — HTTP-клиент, Svelte-хранилища состояния, логика composite-регионов, форматирование дат, типы.
+- `frontend/static/map/russia-regions.svg` — исходная геометрия карты (SvelteKit-конвенция `static/`, не `public/`).
+- `frontend/svelte.config.js` — `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`), вывод сборки в `backend/static/dist/`, `paths.base` = `/static/dist` только в production.
 - `frontend/package-lock.json` — зафиксированные npm-зависимости.
 
-Не возвращать frontend/backend-исходники в корень репозитория. Не редактировать `backend/static/dist/`, `dist/`, любые `node_modules/` и другие generated-файлы вручную. Менять исходники и пересобирать.
+Frontend — serverless SPA: SSR отключён (`export const ssr = false` в `+layout.ts`), собирается только статика, Node-сервер для фронтенда не нужен ни в dev, ни в проде. Не возвращать frontend/backend-исходники в корень репозитория. Не редактировать `backend/static/dist/`, `dist/`, `.svelte-kit/`, любые `node_modules/` и другие generated-файлы вручную. Менять исходники и пересобирать.
 
 ## Локальная настройка и проверки
 
