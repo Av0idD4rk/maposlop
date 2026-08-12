@@ -1,0 +1,75 @@
+{% load static %}
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Карта ближайших CTF-мероприятий в регионах России" />
+    <title>CTF Карта России</title>
+    <link rel="stylesheet" href="{% static 'dist/app.css' %}" />
+  </head>
+  <body>
+    <a class="skip-link" href="#region-panel">К информации о регионе</a>
+    <main class="map-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="CTF Карта — на главную">
+          <span class="brand__mark" aria-hidden="true">&gt;_</span>
+          <span><strong>CTF</strong><i>/</i>КАРТА</span>
+        </a>
+        <div class="topbar__status"><span class="live-dot"></span><span id="event-count">Загружаем события</span></div>
+        <button class="button button--primary" id="suggest-open" type="button"><span>＋</span> Добавить событие</button>
+      </header>
+
+      <div class="map-stage" id="map-stage" role="application" tabindex="0"
+        aria-label="Интерактивная карта регионов России. Выберите регион."></div>
+      <div class="event-markers" id="event-markers" aria-label="Мероприятия на карте"></div>
+
+      <nav class="map-zoom" aria-label="Масштаб карты">
+        <button class="map-zoom__button" id="zoom-in" type="button" aria-label="Увеличить">+</button>
+        <button class="map-zoom__button" id="zoom-reset" type="button" aria-label="Сбросить масштаб">⌾</button>
+        <button class="map-zoom__button" id="zoom-out" type="button" aria-label="Уменьшить">−</button>
+      </nav>
+
+      <aside class="side-panel" id="region-panel" aria-live="polite" aria-labelledby="panel-title">
+        <button class="icon-button side-panel__close" id="panel-close" type="button" aria-label="Закрыть">×</button>
+        <p class="eyebrow" id="panel-kicker">ВЫБЕРИТЕ РЕГИОН</p>
+        <h2 id="panel-title">Где играем?</h2>
+        <div id="panel-content" class="panel-content">
+          <p class="empty-copy">Нажмите на регион карты, чтобы увидеть ближайшие CTF.</p>
+        </div>
+      </aside>
+
+      <div class="map-hint"><span aria-hidden="true">⌖</span> Перетаскивайте карту · колёсико меняет масштаб</div>
+    </main>
+
+    <dialog class="modal" id="event-modal" aria-labelledby="event-modal-title">
+      <button class="icon-button modal__close" data-close-dialog type="button" aria-label="Закрыть">×</button>
+      <div id="event-modal-content"></div>
+    </dialog>
+
+    <dialog class="modal modal--form" id="suggest-modal" aria-labelledby="suggest-title">
+      <button class="icon-button modal__close" data-close-dialog type="button" aria-label="Закрыть">×</button>
+      <p class="eyebrow">ПОМОГИТЕ КАРТЕ СТАТЬ ПОЛНЕЕ</p>
+      <h2 id="suggest-title">Предложить CTF</h2>
+      <p class="modal__lead">Пришлите основные данные. Администратор проверит их перед публикацией.</p>
+      <form id="suggest-form" class="suggest-form">
+        <label><span>Название *</span><input name="title" required maxlength="160" placeholder="Например, ByteTheFlag 2026" /></label>
+        <label><span>Регион *</span><select name="regionCode" id="region-select" required><option value="">Выберите регион</option></select></label>
+        <label><span>Город</span><input name="city" maxlength="120" placeholder="Москва" /></label>
+        <div class="form-row">
+          <label><span>Начало *</span><input name="startsAt" type="datetime-local" required /></label>
+          <label><span>Окончание</span><input name="endsAt" type="datetime-local" /></label>
+        </div>
+        <label><span>Ссылка</span><input name="website" type="url" placeholder="https://…" /></label>
+        <label><span>Что важно знать *</span><textarea name="details" required rows="4" placeholder="Формат, участники, регистрация…"></textarea></label>
+        <div class="form-row">
+          <label><span>Ваше имя *</span><input name="contactName" required maxlength="120" /></label>
+          <label><span>Email *</span><input name="contactEmail" type="email" required /></label>
+        </div>
+        <p class="form-status" id="form-status" role="status"></p>
+        <button class="button button--primary button--wide" type="submit">Отправить на проверку <span>→</span></button>
+      </form>
+    </dialog>
+    <script type="module" src="{% static 'dist/app.js' %}"></script>
+  </body>
+</html>
