@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-  import { base } from '$app/paths';
+  import { assets } from '$app/paths';
   import { canonicalRegionId, regionMembers, compositeName, colorForRegion } from '$lib/regions';
   import { events, selectedRegionId, regionNames, activeEvent } from '$lib/stores';
   import { dateText, pulseClass, nearestLabel } from '$lib/format';
@@ -307,7 +307,7 @@
     async function loadMap() {
       stage.classList.add('is-loading');
       try {
-        const text = await fetch(`${base}/map/russia-regions.svg`).then((r) => {
+        const text = await fetch(`${assets}/map/russia-regions.svg`).then((r) => {
           if (!r.ok) throw new Error('Map unavailable');
           return r.text();
         });
@@ -457,7 +457,7 @@
       renderSelection();
       if (id) {
         mapAriaLabel = `Выбран регион: ${regionDisplayName(id)}`;
-        history.replaceState(null, '', `#region=${id}`);
+        history.replaceState(null, '', `${location.pathname}${location.search}#region=${id}`);
         focusRegion(id);
       } else {
         mapAriaLabel = 'Интерактивная карта регионов России. Выберите регион.';
