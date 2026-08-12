@@ -7,7 +7,7 @@
 - `backend/` — Django-проект (`ctfmap/`, `events/`, `manage.py`, `requirements.txt`).
 - `frontend/` — SvelteKit-приложение, собираемое как serverless SPA (`src/lib/components/`, `src/lib/*.ts`, `src/routes/`, `static/`, `package.json`).
 
-Frontend — SPA без сервера: `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`, `ssr = false`) собирает чистый HTML/JS/CSS без Node-рантайма. Сборка (`npm run build`) кладёт бандл в `backend/static/dist/`; Django-view `events.views.index` отдаёт готовый `index.html` как есть и выставляет CSRF-cookie. UI разложен по компонентам (`Topbar`, `MapStage`, `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`) и модулям `lib/` (`api.ts`, `stores.ts`, `regions.ts`, `format.ts`, `types.ts`) вместо одного файла `main.ts`.
+Frontend — SPA без сервера: `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`, `ssr = false`) собирает чистый HTML/JS/CSS без Node-рантайма. Сборка (`npm run build`) кладёт бандл в `backend/static/dist/`; обёртка адаптера оставляет URL ассетов под `/static/dist`, а client router — на `/`. Django-view `events.views.index` отдаёт готовый `index.html` как есть и выставляет CSRF-cookie. UI разложен по компонентам (`Topbar`, `MapStage`, `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`) и модулям `lib/` (`api.ts`, `stores.ts`, `regions.ts`, `format.ts`, `types.ts`) вместо одного файла `main.ts`.
 
 ## Локальный запуск
 

@@ -24,7 +24,7 @@
 - `frontend/src/lib/components/` — по компоненту на область UI: `Topbar`, `MapStage` (Three.js-рендер, поинтеры, зум, маркеры), `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`.
 - `frontend/src/lib/{api,stores,regions,format,types}.ts` — HTTP-клиент, Svelte-хранилища состояния, логика composite-регионов, форматирование дат, типы.
 - `frontend/static/map/russia-regions.svg` — исходная геометрия карты (SvelteKit-конвенция `static/`, не `public/`).
-- `frontend/svelte.config.js` — `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`), вывод сборки в `backend/static/dist/`, `paths.base` = `/static/dist` только в production.
+- `frontend/svelte.config.js` — обёртка над `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`) с выводом в `backend/static/dist/`. Production-сборка размещает ассеты под `/static/dist`, после чего адаптер оставляет client router на `/` в bootstrap fallback-файла.
 - `frontend/package-lock.json` — зафиксированные npm-зависимости.
 
 Frontend — serverless SPA: SSR отключён (`export const ssr = false` в `+layout.ts`), собирается только статика, Node-сервер для фронтенда не нужен ни в dev, ни в проде. Не возвращать frontend/backend-исходники в корень репозитория. Не редактировать `backend/static/dist/`, `dist/`, `.svelte-kit/`, любые `node_modules/` и другие generated-файлы вручную. Менять исходники и пересобирать.
