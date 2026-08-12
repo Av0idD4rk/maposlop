@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
-    outDir: 'static/dist',
+    outDir: '../backend/static/dist',
     emptyOutDir: true,
     rollupOptions: {
       input: 'src/main.ts',
