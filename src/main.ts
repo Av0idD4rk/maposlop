@@ -22,6 +22,78 @@ const mapStage = requireElement<HTMLElement>('#map-stage');
 const zoomInButton = requireElement<HTMLButtonElement>('#zoom-in');
 const zoomOutButton = requireElement<HTMLButtonElement>('#zoom-out');
 const zoomResetButton = requireElement<HTMLButtonElement>('#zoom-reset');
+const adminPanel = requireElement<HTMLElement>('#admin-panel');
+const adminToggle = requireElement<HTMLButtonElement>('#admin-toggle');
+const adminClose = requireElement<HTMLButtonElement>('#admin-close');
+const eventPanel = requireElement<HTMLElement>('#event-panel');
+const eventClose = requireElement<HTMLButtonElement>('#event-close');
+const eventRegion = requireElement<HTMLElement>('#event-region');
+const eventList = requireElement<HTMLElement>('#event-list');
+const form = requireElement<HTMLFormElement>('#ctf-form');
+const regionSelect = requireElement<HTMLSelectElement>('#ctf-region');
+const cityInput = requireElement<HTMLInputElement>('#ctf-city');
+const nameInput = requireElement<HTMLInputElement>('#ctf-name');
+const startInput = requireElement<HTMLInputElement>('#ctf-start');
+const endInput = requireElement<HTMLInputElement>('#ctf-end');
+const formError = requireElement<HTMLElement>('#form-error');
+const toast = requireElement<HTMLElement>('#toast');
+
+type CtfEvent = { id: string; regionId: string; city: string; name: string; start: string; end: string };
+const STORAGE_KEY = 'ctf-map-events-v1';
+let ctfEvents: CtfEvent[] = loadEvents();
+const flags = new Map<string, THREE.Group>();
+
+function loadEvents(): CtfEvent[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((item): item is CtfEvent => Boolean(item && typeof item === 'object' && 'regionId' in item)) : [];
+  } catch { return []; }
+}
+
+function setPanel(panel: HTMLElement, open: boolean): void {
+  panel.classList.toggle('is-open', open);
+  panel.setAttribute('aria-hidden', String(!open));
+  if (panel === adminPanel) adminToggle.setAttribute('aria-expanded', String(open));
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function eventStatus(event: CtfEvent): { label: string; className: string } {
+  const now = Date.now();
+  if (new Date(event.start).getTime() <= now && new Date(event.end).getTime() >= now) return { label: 'Идёт сейчас', className: 'is-live' };
+  if (new Date(event.end).getTime() < now) return { label: 'Завершён', className: 'is-past' };
+  return { label: 'Скоро', className: 'is-upcoming' };
+}
+
+function showRegionEvents(id: string): void {
+  const now = Date.now();
+  const events = ctfEvents.filter((event) => event.regionId === id).sort((a, b) => {
+    const rank = (item: CtfEvent) => new Date(item.end).getTime() < now ? 2 : new Date(item.start).getTime() <= now ? 0 : 1;
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff) return rankDiff;
+    return rank(a) === 2
+      ? new Date(b.start).getTime() - new Date(a.start).getTime()
+      : new Date(a.start).getTime() - new Date(b.start).getTime();
+  });
+  eventRegion.textContent = getRegion(id).name;
+  eventList.replaceChildren();
+  if (!events.length) {
+    const empty = document.createElement('p'); empty.className = 'event-empty'; empty.textContent = 'В этом регионе пока нет CTF.'; eventList.append(empty);
+  }
+  events.forEach((event) => {
+    const status = eventStatus(event);
+    const card = document.createElement('article'); card.className = 'event-card';
+    const meta = document.createElement('div'); meta.className = 'event-card__meta';
+    const badge = document.createElement('span'); badge.className = `status ${status.className}`; badge.textContent = status.label;
+    const city = document.createElement('span'); city.textContent = event.city;
+    const title = document.createElement('h3'); title.textContent = event.name;
+    const dates = document.createElement('p'); dates.textContent = `${formatDate(event.start)} — ${formatDate(event.end)}`;
+    meta.append(badge, city); card.append(meta, title, dates); eventList.append(card);
+  });
+  setPanel(adminPanel, false); setPanel(eventPanel, true);
+}
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const scene = new THREE.Scene();
@@ -167,6 +239,21 @@ function selectRegion(id: string): void {
   selectedId = id;
   announceRegion(getRegion(id));
   renderSelection();
+  showRegionEvents(id);
+}
+
+function syncFlags(): void {
+  flags.forEach((flag) => { mapGroup.remove(flag); flag.traverse((object) => { if (object instanceof THREE.Mesh) { object.geometry.dispose(); (object.material as THREE.Material).dispose(); } }); });
+  flags.clear();
+  new Set(ctfEvents.map((event) => event.regionId)).forEach((id) => {
+    const regionMeshes = meshById.get(id); if (!regionMeshes?.length) return;
+    const bounds = new THREE.Box3(); regionMeshes.forEach((mesh) => { mesh.geometry.computeBoundingBox(); if (mesh.geometry.boundingBox) bounds.union(mesh.geometry.boundingBox); });
+    const center = bounds.getCenter(new THREE.Vector3());
+    const flag = new THREE.Group(); flag.position.set(center.x, center.y, 1.1); flag.scale.setScalar(0.055);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 30, 8), new THREE.MeshStandardMaterial({ color: 0xd9f8ff, metalness: 0.65, roughness: 0.3 })); pole.rotation.x = Math.PI / 2; pole.position.z = 15;
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(20, 11), new THREE.MeshBasicMaterial({ color: 0x31f6c7, side: THREE.DoubleSide })); cloth.position.set(10, 0, 25); cloth.rotation.x = Math.PI / 2;
+    flag.add(pole, cloth); mapGroup.add(flag); flags.set(id, flag);
+  });
 }
 
 function getViewportCenter(): THREE.Vector3 | null {
@@ -297,6 +384,10 @@ async function loadReferenceSvg(): Promise<void> {
     normalizeMap();
     addCountrySilhouette(silhouette);
     mapReady = true;
+    [...regionsById.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru')).forEach((region) => {
+      const option = document.createElement('option'); option.value = region.id; option.textContent = region.name; regionSelect.append(option);
+    });
+    syncFlags();
     const initial = new URLSearchParams(window.location.hash.slice(1)).get('region');
     if (initial && meshById.has(initial)) selectRegion(initial);
     else announceRegion(null);
@@ -446,6 +537,18 @@ mapStage.addEventListener('keydown', (event) => {
 zoomInButton.addEventListener('click', () => setZoom(targetZoom * 1.2, getViewportCenter()));
 zoomOutButton.addEventListener('click', () => setZoom(targetZoom / 1.2, getViewportCenter()));
 zoomResetButton.addEventListener('click', resetViewport);
+adminToggle.addEventListener('click', () => { setPanel(eventPanel, false); setPanel(adminPanel, true); window.setTimeout(() => regionSelect.focus(), 180); });
+adminClose.addEventListener('click', () => setPanel(adminPanel, false));
+eventClose.addEventListener('click', () => setPanel(eventPanel, false));
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setPanel(adminPanel, false); setPanel(eventPanel, false); } });
+form.addEventListener('submit', (event) => {
+  event.preventDefault(); formError.textContent = '';
+  const start = new Date(startInput.value); const end = new Date(endInput.value);
+  if (end <= start) { formError.textContent = 'Окончание должно быть позже начала.'; endInput.focus(); return; }
+  const item: CtfEvent = { id: crypto.randomUUID(), regionId: regionSelect.value, city: cityInput.value.trim(), name: nameInput.value.trim(), start: start.toISOString(), end: end.toISOString() };
+  ctfEvents.push(item); localStorage.setItem(STORAGE_KEY, JSON.stringify(ctfEvents)); syncFlags(); form.reset(); setPanel(adminPanel, false);
+  selectRegion(item.regionId); focusRegion(item.regionId); toast.textContent = `${item.name} добавлен на карту`; toast.classList.add('is-visible'); window.setTimeout(() => toast.classList.remove('is-visible'), 2600);
+});
 
 resize();
 void loadReferenceSvg();

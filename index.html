@@ -8,6 +8,13 @@
   </head>
   <body>
     <main class="map-shell">
+      <header class="brand">
+        <span class="brand__mark" aria-hidden="true">{ }</span>
+        <span><strong>CTF MAP</strong><small>Россия</small></span>
+      </header>
+      <button class="admin-toggle" id="admin-toggle" type="button" aria-controls="admin-panel" aria-expanded="false">
+        <span aria-hidden="true">＋</span> Добавить CTF
+      </button>
       <div
         class="map-stage"
         id="map-stage"
@@ -19,6 +26,30 @@
         <button class="map-zoom__button" id="zoom-reset" type="button" aria-label="Сбросить масштаб">⌾</button>
         <button class="map-zoom__button" id="zoom-out" type="button" aria-label="Уменьшить карту">−</button>
       </nav>
+      <aside class="event-panel" id="event-panel" aria-live="polite" aria-hidden="true">
+        <button class="panel-close" id="event-close" type="button" aria-label="Закрыть список">×</button>
+        <p class="eyebrow">События региона</p>
+        <h2 id="event-region">Регион</h2>
+        <div class="event-list" id="event-list"></div>
+      </aside>
+      <aside class="admin-panel" id="admin-panel" aria-hidden="true">
+        <div class="admin-panel__head">
+          <div><p class="eyebrow">Управление картой</p><h2>Новый CTF</h2></div>
+          <button class="panel-close" id="admin-close" type="button" aria-label="Закрыть панель">×</button>
+        </div>
+        <form class="ctf-form" id="ctf-form">
+          <label>Регион<select id="ctf-region" required><option value="">Выберите регион</option></select></label>
+          <label>Город<input id="ctf-city" type="text" placeholder="Например, Казань" maxlength="80" required /></label>
+          <label>Название CTF<input id="ctf-name" type="text" placeholder="Название соревнования" maxlength="120" required /></label>
+          <div class="form-dates">
+            <label>Начало<input id="ctf-start" type="datetime-local" required /></label>
+            <label>Окончание<input id="ctf-end" type="datetime-local" required /></label>
+          </div>
+          <p class="form-error" id="form-error" role="alert"></p>
+          <button class="submit-button" type="submit">Добавить на карту <span aria-hidden="true">→</span></button>
+        </form>
+      </aside>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
