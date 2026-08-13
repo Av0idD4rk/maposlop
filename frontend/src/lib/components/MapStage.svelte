@@ -130,10 +130,12 @@
     const meshById = new Map<string, RegionMesh[]>();
     const regionsById = new Map<string, Region>();
     let mapProjection: GeoProjection | null = null;
+    const flagAnchorById = new Map<string, { point: THREE.Vector2; area: number }>();
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const mapPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const targetPosition = new THREE.Vector3();
+    const normalizedMapSize = new THREE.Vector2(22.5, 11);
 
     let selectedId: string | null = null;
     let hoveredId: string | null = null;
@@ -152,6 +154,7 @@
         targetPosition.copy(anchor).addScaledVector(local, -next);
       }
       targetZoom = next;
+      clampViewport();
     }
     function resetViewport() {
       targetZoom = 1;
@@ -168,7 +171,18 @@
       });
       return bounds;
     }
+    /** Best flag anchor across a region's members: the centroid of its single largest triangulated patch. */
+    function regionFlagAnchor(id: string) {
+      let best: { point: THREE.Vector2; area: number } | undefined;
+      regionMembers(id).forEach((member) => {
+        const anchor = flagAnchorById.get(member);
+        if (anchor && (!best || anchor.area > best.area)) best = anchor;
+      });
+      return best?.point;
+    }
     function regionCenter(id: string) {
+      const anchor = regionFlagAnchor(id);
+      if (anchor) return new THREE.Vector3(anchor.x, anchor.y, 0);
       return regionBounds(id).getCenter(new THREE.Vector3());
     }
     function regionDisplayName(id: string): string {
@@ -220,6 +234,7 @@
       normalizedCenter.applyMatrix4(mapGroup.matrix);
       targetZoom = regionZoom;
       targetPosition.set(desiredPoint.x - normalizedCenter.x * regionZoom, desiredPoint.y - normalizedCenter.y * regionZoom, 0);
+      clampViewport();
     }
     function normalizeMap() {
       const bounds = new THREE.Box3().setFromObject(mapGroup);
@@ -228,6 +243,34 @@
       const scale = 22.5 / Math.max(size.x, size.y);
       mapGroup.scale.set(scale, -scale, scale);
       mapGroup.position.set(-center.x * scale, center.y * scale + 0.62, 0);
+      normalizedMapSize.set(size.x * scale, size.y * scale);
+    }
+    function visibleHalfExtents() {
+      const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * camera.position.z;
+      return new THREE.Vector2(halfHeight * camera.aspect, halfHeight);
+    }
+    /** Keep a useful part of the map inside the viewport at every zoom/pan combination. */
+    function clampViewport() {
+      const visible = visibleHalfExtents();
+      const maxX = Math.max(0, (normalizedMapSize.x * targetZoom) / 2 - visible.x * 0.48);
+      const maxY = Math.max(0, (normalizedMapSize.y * targetZoom) / 2 - visible.y * 0.48);
+      targetPosition.x = THREE.MathUtils.clamp(targetPosition.x, -maxX, maxX);
+      targetPosition.y = THREE.MathUtils.clamp(targetPosition.y, -maxY, maxY);
+    }
+    /** Unlike a bounding-box centre, the largest triangle's centroid is always on solid ground. */
+    function updateFlagAnchor(id: string, shape: THREE.Shape) {
+      const contour = shape.getPoints(2);
+      const holes = shape.holes.map((hole) => hole.getPoints(2));
+      const vertices = [...contour, ...holes.flat()];
+      THREE.ShapeUtils.triangulateShape(contour, holes).forEach(([aIndex, bIndex, cIndex]) => {
+        const a = vertices[aIndex];
+        const b = vertices[bIndex];
+        const c = vertices[cIndex];
+        if (!a || !b || !c) return;
+        const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) * 0.5;
+        if (area <= (flagAnchorById.get(id)?.area ?? 0)) return;
+        flagAnchorById.set(id, { point: new THREE.Vector2((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3), area });
+      });
     }
     function addRegion(id: string, name: string, paths: THREE.ShapePath[]) {
       const region: Region = { id, name: id === '78' ? 'Санкт-Петербург' : name, fragments: paths.length, color: colorForRegion(id) };
@@ -235,6 +278,7 @@
       const list: RegionMesh[] = [];
       paths.forEach((path) =>
         SVGLoader.createShapes(path).forEach((shape) => {
+          updateFlagAnchor(id, shape);
           const geometry = new THREE.ExtrudeGeometry(shape, {
             depth: 16,
             bevelEnabled: !compactDevice,
@@ -499,6 +543,7 @@
       camera.lookAt(0, 0, -0.35);
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
+      clampViewport();
     }
 
     const resizeObserver = new ResizeObserver(resize);
@@ -515,6 +560,7 @@
           const current = getWorldPoint(e.clientX, e.clientY);
           if (current) {
             targetPosition.add(panAnchor.clone().sub(current));
+            clampViewport();
             panAnchor = current;
           }
           stage.classList.add('is-dragging');
