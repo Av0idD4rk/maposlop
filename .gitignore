@@ -25,6 +25,7 @@ playwright-report/
 coverage/
 
 # OS and editor files
+.claude/
 .DS_Store
 Thumbs.db
 .vscode/
