@@ -11,7 +11,7 @@ function getCookie(name: string): string {
 }
 
 export async function fetchEvents(): Promise<CtfEvent[]> {
-  const response = await fetch('/api/events/');
+  const response = await fetch('/api/v1/events/');
   if (!response.ok) throw new Error('Events unavailable');
   const data = await response.json();
   return data.events as CtfEvent[];
@@ -27,10 +27,11 @@ export type SubmissionPayload = {
   details: string;
   contactName: string;
   contactEmail: string;
+  company?: string;
 };
 
 export async function submitEvent(payload: SubmissionPayload): Promise<string> {
-  const response = await fetch('/api/submissions/', {
+  const response = await fetch('/api/v1/submissions/', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

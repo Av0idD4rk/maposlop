@@ -12,3 +12,4 @@ export const regionNames = writable<Map<string, string>>(new Map());
 
 export const activeEvent = writable<CtfEvent | null>(null);
 export const suggestOpen = writable<boolean>(false);
+export const catalogOpen = writable<boolean>(false);

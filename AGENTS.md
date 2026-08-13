@@ -19,11 +19,11 @@
 - `backend/ctfmap/` — настройки и URL Django-проекта.
 - `backend/events/` — модели, admin, формы, API, миграции и management commands.
 - `backend/events/views.index` — читает собранный `backend/static/dist/index.html` и отдаёт его как есть (с `@ensure_csrf_cookie`); серверного HTML-шаблона для главной страницы больше нет.
-- `backend/manage.py` и `backend/requirements.txt` — точка входа и Python-зависимости.
+- `backend/manage.py`, `backend/requirements.txt` и `backend/requirements-dev.txt` — точка входа, runtime- и test/lint-зависимости.
 - `frontend/src/routes/+page.svelte` — корневая страница, собирает компоненты из `frontend/src/lib/components/`.
-- `frontend/src/lib/components/` — по компоненту на область UI: `Topbar`, `MapStage` (Three.js-рендер, поинтеры, зум, маркеры), `RegionPanel`, `EventCard`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`.
-- `frontend/src/lib/{api,stores,regions,format,types}.ts` — HTTP-клиент, Svelte-хранилища состояния, логика composite-регионов, форматирование дат, типы.
-- `frontend/static/map/russia-regions.svg` — исходная геометрия карты (SvelteKit-конвенция `static/`, не `public/`).
+- `frontend/src/lib/components/` — по компоненту на область UI: `Topbar`, `MapStage` (Three.js-рендер, поинтеры, зум, маркеры), `RegionPanel`, `EventCard`, `EventCatalog`, `Modal`, `EventModal`, `SuggestModal`, `ZoomControls`, `MapHint`.
+- `frontend/src/lib/{api,catalog,event-data,stores,regions,format,travel,types}.ts` — HTTP-клиент, каталог, общие данные событий, состояние, composite-регионы, форматирование и travel-ссылки.
+- `frontend/static/map/russia-regions.geojson` — подготовленные границы субъектов Natural Earth 1:10m; `scripts/build_map_data.py` воспроизводимо обновляет их и фильтрует только неразличимые микрополигоны.
 - `frontend/svelte.config.js` — обёртка над `@sveltejs/adapter-static` в SPA-режиме (`fallback: 'index.html'`) с выводом в `backend/static/dist/`. Production-сборка размещает ассеты под `/static/dist`, после чего адаптер оставляет client router на `/` в bootstrap fallback-файла.
 - `frontend/package-lock.json` — зафиксированные npm-зависимости.
 
@@ -36,7 +36,7 @@ PowerShell:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r backend\requirements.txt
+python -m pip install -r backend\requirements-dev.txt
 Push-Location frontend
 npm ci
 npm run build
@@ -54,6 +54,8 @@ Push-Location backend
 python manage.py check
 python manage.py makemigrations --check --dry-run
 python manage.py test
+ruff check .
+pip-audit -r requirements.txt
 Pop-Location
 ```
 
@@ -61,11 +63,20 @@ Pop-Location
 
 ```powershell
 Push-Location frontend
+npm test
+npm run check
 npm run build
+npm audit
+npm run test:e2e
 Pop-Location
 ```
 
-На чистом checkout сначала собирать frontend: он создаёт `backend/static/`, который ожидают текущие Django settings. До исправления этого контракта отдельный backend check может выдать `staticfiles.W004`. Перед release дополнительно выполнить dependency audits и `python manage.py check --deploy` из `backend/` с production settings. Не скрывать предупреждения увеличением лимитов или отключением проверок без документированной причины.
+`backend/static/.gitkeep` сохраняет корень статических файлов на чистом checkout,
+поэтому самостоятельный `manage.py check` не должен выдавать `staticfiles.W004`.
+Frontend build всё равно обязателен перед запуском пользовательской страницы.
+Перед release выполнить dependency audits и `python manage.py check --deploy
+--fail-level WARNING` с production settings. Не скрывать предупреждения увеличением
+лимитов или отключением проверок без документированной причины.
 
 ## Правила данных и моделей
 
@@ -84,6 +95,7 @@ Pop-Location
 - Перед подключением источника проверить его документацию, terms/robots и ограничения частоты.
 - Для каждого HTTP-клиента задавать timeout, понятный User-Agent, ограниченный retry с backoff, rate limit и обработку частичного ответа.
 - Не выполнять сетевые запросы к источникам при рендере пользовательской страницы. Импортировать по расписанию и отдавать данные из локальной БД.
+- Геокодирование нового города выполняется только при явном сохранении в админке, не чаще одного запроса в секунду, с timeout/User-Agent и сохранением результата в `City`; URL провайдера должен настраиваться через окружение.
 - Новые/конфликтные события из агрегатора сначала помещать в `draft`/`needs_review`.
 - CTFtime использовать с атрибуцией и ссылкой на оригинал; не превращать проект в клон CTFtime.
 - CTFNews не парсить агрессивно. До появления документированного API использовать согласованный календарный feed или ручную модерацию.
@@ -98,10 +110,14 @@ Pop-Location
 - Для растущих списков добавлять пагинацию, фильтры и индексы; не сериализовать неограниченную историю целиком.
 - Production secrets, hosts, cookies и DB URL читать из окружения. Никогда не коммитить реальные ключи, токены или `.env`.
 - Логи не должны содержать секреты, полное тело пользовательской формы, email или другие персональные данные без необходимости.
+- Стабильный публичный контракт находится под `/api/v1/`; legacy `/api/` поддерживать только как явно документированный переходный alias.
+- `/health/` проверяет процесс, `/ready/` — БД и общий cache; readiness не должна маскировать недоступную зависимость.
+- Rate limit публичной формы должен использовать общий Redis cache в production и завершаться безопасной ошибкой при недоступности cache.
 
 ## Frontend, карта и дизайн
 
 - Карта не может быть единственным способом найти событие. Поддерживать доступный HTML-список/поиск и понятное состояние при отсутствии WebGL.
+- Three.js-карту загружать лениво после критического HTML; сбой карты не должен ломать каталог и карточки событий.
 - Интерактивные элементы должны работать с клавиатурой, иметь видимый `:focus-visible`, корректное имя и цель не меньше 44×44 px.
 - Не передавать формат, допуск или срочность только цветом; добавлять текст/иконку/легенду.
 - Соблюдать `prefers-reduced-motion`. Анимировать преимущественно `transform` и `opacity`; не запускать тяжёлые эффекты на слабых/мобильных устройствах.
@@ -148,5 +164,6 @@ Pop-Location
 - frontend `npm run build`, затем backend `python manage.py check`, миграционные проверки и тесты проходят из своих рабочих каталогов;
 - проверены keyboard/mobile/reduced-motion сценарии для UI;
 - новые внешние данные имеют provenance и fallback;
+- production-конфигурация проходит `check --deploy --fail-level WARNING`, а health/readiness имеют smoke-тесты;
 - в diff нет секретов, персональных данных, случайных generated-файлов и unrelated-изменений;
 - документация обновлена.

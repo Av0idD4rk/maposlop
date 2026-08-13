@@ -2,7 +2,45 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from .regions import canonical_region_code, region_name
+from .regions import administrative_region_name, canonical_region_code, region_name
+
+
+class City(models.Model):
+    name = models.CharField("Город", max_length=120)
+    region_code = models.CharField("Код субъекта", max_length=3)
+    region_label = models.CharField("Субъект РФ", max_length=160, editable=False)
+    latitude = models.DecimalField("Широта", max_digits=9, decimal_places=6)
+    longitude = models.DecimalField("Долгота", max_digits=9, decimal_places=6)
+    geodata_source = models.CharField("Источник геоданных", max_length=160)
+    source_url = models.URLField("Ссылка на источник")
+    location_verified = models.BooleanField("Точка проверена", default=False)
+
+    class Meta:
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(fields=("region_code", "name"), name="unique_city_per_region"),
+        ]
+        verbose_name = "Город"
+        verbose_name_plural = "Города"
+
+    def clean(self):
+        if self.region_code and not administrative_region_name(self.region_code):
+            raise ValidationError({"region_code": "Выберите субъект РФ из списка."})
+        if self.latitude is not None and not -90 <= self.latitude <= 90:
+            raise ValidationError({"latitude": "Широта должна быть от -90 до 90."})
+        if self.longitude is not None and not -180 <= self.longitude <= 180:
+            raise ValidationError({"longitude": "Долгота должна быть от -180 до 180."})
+
+    def save(self, *args, **kwargs):
+        self.region_label = administrative_region_name(self.region_code)
+        super().save(*args, **kwargs)
+
+    @property
+    def has_exact_marker(self):
+        return self.location_verified
+
+    def __str__(self):
+        return f"{self.name}, {self.region_label}"
 
 
 class Event(models.Model):
@@ -14,7 +52,15 @@ class Event(models.Model):
     title = models.CharField("Название", max_length=160)
     region_code = models.CharField("Регион", max_length=3)
     region_label = models.CharField("Название региона", max_length=160, editable=False)
-    city = models.CharField("Город", max_length=120, blank=True)
+    city = models.CharField("Город", max_length=120, blank=True, editable=False)
+    city_ref = models.ForeignKey(
+        City,
+        verbose_name="Город",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
     venue = models.CharField("Площадка", max_length=180, blank=True)
     starts_at = models.DateTimeField("Начало")
     ends_at = models.DateTimeField("Окончание")
@@ -27,6 +73,16 @@ class Event(models.Model):
 
     class Meta:
         ordering = ("starts_at",)
+        indexes = [
+            models.Index(
+                fields=("published", "ends_at", "starts_at"),
+                name="event_public_dates_idx",
+            ),
+            models.Index(
+                fields=("region_code", "published", "ends_at"),
+                name="event_region_public_idx",
+            ),
+        ]
         verbose_name = "CTF-мероприятие"
         verbose_name_plural = "CTF-мероприятия"
 
@@ -35,10 +91,14 @@ class Event(models.Model):
             raise ValidationError({"ends_at": "Окончание должно быть позже начала."})
         if self.region_code and not region_name(self.region_code):
             raise ValidationError({"region_code": "Выберите регион из списка."})
+        if self.city_ref and canonical_region_code(self.city_ref.region_code) != canonical_region_code(self.region_code):
+            raise ValidationError({"city_ref": "Город должен относиться к выбранному региону карты."})
 
     def save(self, *args, **kwargs):
-        self.region_code = canonical_region_code(self.region_code)
-        self.region_label = region_name(self.region_code)
+        if self.city_ref:
+            self.region_code = self.city_ref.region_code
+            self.city = self.city_ref.name
+        self.region_label = administrative_region_name(self.region_code) or region_name(self.region_code)
         super().save(*args, **kwargs)
 
     @property
@@ -72,6 +132,9 @@ class EventSubmission(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("status", "created_at"), name="submission_status_idx"),
+        ]
         verbose_name = "Предложение мероприятия"
         verbose_name_plural = "Предложения мероприятий"
 
