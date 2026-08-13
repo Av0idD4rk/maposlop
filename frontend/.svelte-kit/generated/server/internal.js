@@ -26,7 +26,7 @@ export const options = {
 		app: ({ head, body, assets, nonce, env }) => "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <meta name=\"description\" content=\"Карта ближайших CTF-мероприятий в регионах России\" />\n    <link rel=\"icon\" href=\"" + assets + "/favicon.svg\" />\n    <title>CTF Карта России</title>\n    " + head + "\n  </head>\n  <body>\n    <div style=\"display: contents\">" + body + "</div>\n  </body>\n</html>\n",
 		error
 	},
-	version_hash: "175lj80"
+	version_hash: "1c8ito2"
 };
 
 export async function get_hooks() {
