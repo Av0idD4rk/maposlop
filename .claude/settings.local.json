@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/mjarduk/Desktop/Projects/Hackathon/maposlop ls-files)"
+    ]
+  }
+}

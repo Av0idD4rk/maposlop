@@ -1,0 +1,17 @@
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-before-public-deployment}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      SQLITE_PATH: /app/data/db.sqlite3
+    volumes:
+      - ctfmap-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ctfmap-data:

@@ -1,0 +1,63 @@
+import type { CtfEvent } from './types';
+
+function getCookie(name: string): string {
+  return (
+    document.cookie
+      .split(';')
+      .map((v) => v.trim())
+      .find((v) => v.startsWith(`${name}=`))
+      ?.slice(name.length + 1) ?? ''
+  );
+}
+
+export async function fetchEvents(): Promise<CtfEvent[]> {
+  const response = await fetch('/api/v1/events/');
+  if (!response.ok) throw new Error('Events unavailable');
+  const data = await response.json();
+  return data.events as CtfEvent[];
+}
+
+export async function fetchHeatEvents(months = 24): Promise<CtfEvent[]> {
+  const result: CtfEvent[] = [];
+  let page = 1;
+  let pages = 1;
+  do {
+    const response = await fetch(`/api/v1/events/?history_months=${months}&limit=200&page=${page}`);
+    if (!response.ok) throw new Error('Heat map data unavailable');
+    const data = await response.json();
+    result.push(...data.events as CtfEvent[]);
+    pages = data.pagination?.pages ?? 1;
+    page += 1;
+  } while (page <= pages);
+  return result;
+}
+
+export type SubmissionPayload = {
+  title: string;
+  regionCode: string;
+  city: string;
+  participationMode: 'offline' | 'hybrid' | 'online';
+  startsAt: string;
+  endsAt?: string;
+  website: string;
+  details: string;
+  contactName: string;
+  contactEmail: string;
+  company?: string;
+};
+
+export async function submitEvent(payload: SubmissionPayload): Promise<string> {
+  const response = await fetch('/api/v1/submissions/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': decodeURIComponent(getCookie('csrftoken')),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(Object.values(data.errors ?? {}).flat().join(' ') || 'Не удалось отправить форму');
+  }
+  return data.message as string;
+}

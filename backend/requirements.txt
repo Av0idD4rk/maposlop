@@ -1,0 +1,4 @@
+Django==5.2.16
+dj-database-url==3.1.2
+psycopg[binary]==3.3.4
+redis==8.1.0
