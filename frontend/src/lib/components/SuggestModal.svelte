@@ -12,6 +12,7 @@
   let details = $state('');
   let contactName = $state('');
   let contactEmail = $state('');
+  let company = $state('');
 
   let submitting = $state(false);
   let status = $state('');
@@ -35,6 +36,7 @@
     details = '';
     contactName = '';
     contactEmail = '';
+    company = '';
   }
 
   async function handleSubmit(event: SubmitEvent) {
@@ -53,6 +55,7 @@
         details,
         contactName,
         contactEmail,
+        company,
       });
       status = message;
       statusVariant = 'success';
@@ -77,6 +80,10 @@
   <h2 id="suggest-title">Предложить CTF</h2>
   <p class="modal__lead">Пришлите основные данные. Администратор проверит их перед публикацией.</p>
   <form class="suggest-form" onsubmit={handleSubmit}>
+    <label class="form-honeypot" aria-hidden="true">
+      <span>Компания</span>
+      <input bind:value={company} tabindex="-1" autocomplete="off" />
+    </label>
     <label><span>Название *</span>
       <input bind:value={title} maxlength="160" required placeholder="Например, ByteTheFlag 2026" />
     </label>
@@ -115,6 +122,14 @@
     display: grid;
     gap: 16px;
     margin-top: 26px;
+  }
+
+  .form-honeypot {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
   }
 
   .suggest-form label {

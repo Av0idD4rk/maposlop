@@ -3,7 +3,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from events.models import Event
+from events.city_data import CITY_SEEDS
+from events.models import City, Event
 
 
 class Command(BaseCommand):
@@ -11,6 +12,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         now = timezone.now()
+        cities = {}
+        for seed in CITY_SEEDS:
+            city, _ = City.objects.update_or_create(
+                region_code=seed["region_code"],
+                name=seed["name"],
+                defaults={key: value for key, value in seed.items() if key not in {"region_code", "name"}},
+            )
+            cities[city.name] = city
         samples = [
             ("Moscow Cyber Cup", "77", "Москва", 3, "Командный jeopardy CTF для начинающих и опытных игроков."),
             ("Moscow Junior CTF", "77", "Москва", 8, "Соревнование для школьных и студенческих команд."),
@@ -20,11 +29,12 @@ class Command(BaseCommand):
         ]
         created = 0
         for title, region, city, days, description in samples:
-            _, was_created = Event.objects.get_or_create(
+            event, was_created = Event.objects.get_or_create(
                 title=title,
                 defaults={
                     "region_code": region,
                     "city": city,
+                    "city_ref": cities[city],
                     "starts_at": now + timedelta(days=days),
                     "ends_at": now + timedelta(days=days, hours=8),
                     "description": description,
@@ -32,5 +42,8 @@ class Command(BaseCommand):
                     "published": True,
                 },
             )
+            if event.city_ref_id != cities[city].pk or event.region_code != cities[city].region_code:
+                event.city_ref = cities[city]
+                event.save(update_fields=("city_ref", "city", "region_code", "region_label"))
             created += int(was_created)
         self.stdout.write(self.style.SUCCESS(f"Добавлено демонстрационных событий: {created}"))

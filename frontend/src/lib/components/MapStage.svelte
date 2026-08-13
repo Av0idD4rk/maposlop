@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
+  import { geoConicConformal, geoPath, type GeoProjection } from 'd3-geo';
   import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+  import type { FeatureCollection, Geometry } from 'geojson';
   import { assets } from '$app/paths';
   import { canonicalRegionId, regionMembers, compositeName, colorForRegion } from '$lib/regions';
   import { events, selectedRegionId, regionNames, activeEvent } from '$lib/stores';
@@ -31,13 +33,22 @@
     onclick: () => void;
   };
 
+  type MapProperties = { code: string; name: string; isoCode: string };
+  type MapData = FeatureCollection<Geometry, MapProperties> & {
+    source: string;
+    sourceUrl: string;
+    license: string;
+  };
+
   let stageEl: HTMLDivElement | undefined = $state();
   let mapAriaLabel = $state('Интерактивная карта регионов России. Выберите регион.');
+  let mapStatus = $state<'loading' | 'ready' | 'error'>('loading');
   let markers = $state<MarkerVM[]>([]);
   let mapReady = $state(false);
   let zoomIn = () => {};
   let zoomOut = () => {};
   let zoomReset = () => {};
+  let retryMap = () => {};
 
   // onMount fills these in once the Three.js scene exists; the effects below
   // only ever invoke them after mapReady flips true, so the indirection is safe.
@@ -79,10 +90,12 @@
   onMount(() => {
     const stage = stageEl!;
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const compactDevice = matchMedia('(max-width: 760px)').matches || ((navigator.hardwareConcurrency ?? 8) <= 4);
+    const narrowViewport = matchMedia('(max-width: 760px)').matches;
+    const compactDevice = narrowViewport || ((navigator.hardwareConcurrency ?? 8) <= 4);
+    const compactFlagScale = narrowViewport ? 2 : 1;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 500);
     camera.position.set(0, -5.7, 30);
     camera.lookAt(0, 0, -0.35);
 
@@ -113,18 +126,10 @@
     );
     shadow.position.z = -0.74;
     mapViewport.add(shadow);
-    const silhouetteMaterial = new THREE.MeshStandardMaterial({
-      color: 0x10265c,
-      roughness: 0.78,
-      transparent: true,
-      opacity: 0.65,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-
     const meshes: RegionMesh[] = [];
     const meshById = new Map<string, RegionMesh[]>();
     const regionsById = new Map<string, Region>();
+    let mapProjection: GeoProjection | null = null;
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const mapPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -265,38 +270,6 @@
       );
       if (list.length) meshById.set(id, list);
     }
-    function translate(paths: THREE.ShapePath[], transform: string) {
-      const [x = 0, y = 0] = transform.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [0, 0];
-      paths.forEach((path) =>
-        path.subPaths.forEach((sub) => {
-          sub.currentPoint.add(new THREE.Vector2(x, y));
-          sub.curves.forEach((raw) => {
-            const c = raw as THREE.Curve<THREE.Vector2> & {
-              v0?: THREE.Vector2;
-              v1?: THREE.Vector2;
-              v2?: THREE.Vector2;
-              v3?: THREE.Vector2;
-              aX?: number;
-              aY?: number;
-            };
-            [c.v0, c.v1, c.v2, c.v3].forEach((p) => p?.add(new THREE.Vector2(x, y)));
-            if (c.aX !== undefined) c.aX += x;
-            if (c.aY !== undefined) c.aY += y;
-          });
-        }),
-      );
-      return paths;
-    }
-    function addSilhouette(data: string) {
-      if (!data) return;
-      new SVGLoader().parse(`<svg xmlns="http://www.w3.org/2000/svg"><path d="${data}"/></svg>`).paths.forEach((p) =>
-        SVGLoader.createShapes(p).forEach((shape) => {
-          const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false });
-          geometry.translate(0, 0, -0.7);
-          mapGroup.add(new THREE.Mesh(geometry, silhouetteMaterial));
-        }),
-      );
-    }
     function populateRegions() {
       regionsById.forEach((region) => {
         const id = canonicalRegionId(region.id);
@@ -305,30 +278,38 @@
       regionNames.set(new Map(regionNamesLocal));
     }
     async function loadMap() {
+      mapStatus = 'loading';
       stage.classList.add('is-loading');
       try {
-        const text = await fetch(`${assets}/map/russia-regions.svg`).then((r) => {
+        const data = await fetch(`${assets}/map/russia-regions.geojson`).then((r) => {
           if (!r.ok) throw new Error('Map unavailable');
-          return r.text();
+          return r.json() as Promise<MapData>;
         });
-        const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        mapProjection = geoConicConformal()
+          .parallels([52, 64])
+          .rotate([-100, 0])
+          .precision(0.2)
+          .fitExtent([[0, 0], [1000, 600]], data);
+        const pathGenerator = geoPath(mapProjection);
         const loader = new SVGLoader();
-        [...doc.querySelectorAll<SVGGElement>('svg > g[id^="region-"]')].forEach((group) => {
-          const id = group.id.replace('region-', '');
-          const paths = [...group.querySelectorAll('path')].flatMap(
-            (p) => loader.parse(`<svg xmlns="http://www.w3.org/2000/svg"><path d="${p.getAttribute('d') ?? ''}"/></svg>`).paths,
-          );
-          addRegion(id, group.dataset.name ?? id, group.getAttribute('transform') ? translate(paths, group.getAttribute('transform')!) : paths);
+        data.features.forEach((feature) => {
+          const pathData = pathGenerator(feature);
+          if (!pathData) return;
+          const paths = loader.parse(
+            `<svg xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd"><path d="${pathData}"/></svg>`,
+          ).paths;
+          addRegion(feature.properties.code, feature.properties.name, paths);
         });
         normalizeMap();
-        addSilhouette(doc.querySelector('#country-silhouette')?.getAttribute('d') ?? '');
         populateRegions();
         mapReady = true;
+        mapStatus = 'ready';
         const initial = new URLSearchParams(location.hash.slice(1)).get('region');
         if (initial && meshById.has(initial)) selectedRegionId.set(canonicalRegionId(initial));
       } catch (error) {
         console.error(error);
         mapAriaLabel = 'Не удалось загрузить карту';
+        mapStatus = 'error';
       } finally {
         stage.classList.remove('is-loading');
       }
@@ -384,9 +365,9 @@
       cloth.userData.ownedGeometry = true;
       group.add(base3d, pole, topCollar, bottomCollar, cloth);
       group.position.set(origin.x, origin.y, 0.35);
-      group.scale.setScalar(scale);
+      group.scale.setScalar(scale * compactFlagScale);
       group.userData.targetPosition = new THREE.Vector3(target.x, target.y, 0.35);
-      group.userData.targetScale = targetScale;
+      group.userData.targetScale = targetScale * compactFlagScale;
       flagLayer.add(group);
       return group;
     }
@@ -400,54 +381,76 @@
       return center.clone().add(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0));
     }
 
+    function eventPoint(event: CtfEvent, regionId: string) {
+      if (event.locationPrecision === 'city' && event.longitude !== null && event.latitude !== null && mapProjection) {
+        const point = mapProjection([event.longitude, event.latitude]);
+        if (point) return new THREE.Vector3(point[0], point[1], 0);
+      }
+      return regionCenter(regionId);
+    }
+
+    function locationKey(event: CtfEvent) {
+      return event.locationPrecision === 'city' && event.longitude !== null && event.latitude !== null
+        ? `city:${event.longitude}:${event.latitude}`
+        : 'region-center';
+    }
+
     function rebuildMarkers(currentEvents: CtfEvent[], selected: string | null) {
       clear3dFlags();
-      const grouped = new Map<string, CtfEvent[]>();
+      const grouped = new Map<string, Map<string, CtfEvent[]>>();
       currentEvents.forEach((event) => {
         const id = canonicalRegionId(event.regionCode);
-        const group = grouped.get(id) ?? [];
-        group.push(event);
-        grouped.set(id, group);
+        const regionGroup = grouped.get(id) ?? new Map<string, CtfEvent[]>();
+        const key = locationKey(event);
+        const locationGroup = regionGroup.get(key) ?? [];
+        locationGroup.push(event);
+        regionGroup.set(key, locationGroup);
+        grouped.set(id, regionGroup);
       });
       const next: MarkerVM[] = [];
-      grouped.forEach((regionEvents, groupId) => {
-        const event = regionEvents[0];
-        const count = regionEvents.length;
-        const center = regionCenter(groupId);
-        if (!center) return;
-        const aggregateScale = Math.min(1.66, 1 + Math.log2(count) * 0.22);
-        if (selected === groupId) {
-          regionEvents.forEach((item, index) => {
-            const target = splitFlagPosition(center, index, count);
-            const flag = create3dFlag(center, target, index === 0 ? aggregateScale : 0.12, 0.64);
-            next.push({
-              key: `${groupId}-${item.id}`,
-              className: `event-marker event-marker--split ${pulseClass(item)}`,
-              ariaLabel: `${item.title}, ${dateText(item.startsAt)}`,
-              label: `${index + 1}. ${item.title}`,
-              pulseWidth: '22px',
-              pulseLeft: '-11px',
-              pulseHeight: '11px',
-              labelOffset: '16px',
-              anchor: flag,
-              onclick: () => activeEvent.set(item),
+      grouped.forEach((locations, groupId) => {
+        let regionIndex = 0;
+        locations.forEach((locationEvents, locationId) => {
+          const event = locationEvents[0];
+          const count = locationEvents.length;
+          const center = eventPoint(event, groupId);
+          if (!center) return;
+          const aggregateScale = Math.min(1.66, 1 + Math.log2(count) * 0.22);
+          if (selected === groupId) {
+            locationEvents.forEach((item, index) => {
+              regionIndex += 1;
+              const target = splitFlagPosition(center, index, count);
+              const flag = create3dFlag(center, target, index === 0 ? aggregateScale : 0.12, 0.64);
+              next.push({
+                key: `${groupId}-${item.id}`,
+                className: `event-marker event-marker--split ${pulseClass(item)}`,
+                ariaLabel: `${item.title}, ${item.city || item.regionName}, ${dateText(item.startsAt)}`,
+                label: `${regionIndex}. ${item.title}`,
+                pulseWidth: '22px',
+                pulseLeft: '-11px',
+                pulseHeight: '11px',
+                labelOffset: '16px',
+                anchor: flag,
+                onclick: () => activeEvent.set(item),
+              });
             });
-          });
-        } else {
-          const flag = create3dFlag(center, center, aggregateScale);
-          next.push({
-            key: `${groupId}-agg`,
-            className: `event-marker ${pulseClass(event)}`,
-            ariaLabel: `${count} CTF в регионе. Выбрать ${regionNamesLocal.get(groupId) ?? groupId}`,
-            label: `${count} CTF · ${nearestLabel(event)}`,
-            pulseWidth: `${32 * aggregateScale}px`,
-            pulseLeft: `${-16 * aggregateScale}px`,
-            pulseHeight: `${16 * aggregateScale}px`,
-            labelOffset: `${16 + 10 * aggregateScale}px`,
-            anchor: flag,
-            onclick: () => selectedRegionId.set(groupId),
-          });
-        }
+          } else {
+            const flag = create3dFlag(center, center, aggregateScale);
+            const place = event.locationPrecision === 'city' ? event.city : regionNamesLocal.get(groupId) ?? groupId;
+            next.push({
+              key: `${groupId}-${locationId}-agg`,
+              className: `event-marker ${pulseClass(event)}`,
+              ariaLabel: `${count} CTF, ${place}. Выбрать регион`,
+              label: `${count} CTF · ${place || nearestLabel(event)}`,
+              pulseWidth: `${32 * aggregateScale}px`,
+              pulseLeft: `${-16 * aggregateScale}px`,
+              pulseHeight: `${16 * aggregateScale}px`,
+              labelOffset: `${16 + 10 * aggregateScale}px`,
+              anchor: flag,
+              onclick: () => selectedRegionId.set(groupId),
+            });
+          }
+        });
       });
       markers = next;
     }
@@ -486,6 +489,14 @@
       const { width, height } = stage.getBoundingClientRect();
       if (!width || !height) return;
       camera.aspect = width / height;
+      if (width <= 760) {
+        const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+        camera.position.z = Math.max(30, 23.5 / (2 * Math.tan(halfFov) * camera.aspect));
+      } else {
+        camera.position.z = 30;
+      }
+      camera.position.x = 0;
+      camera.lookAt(0, 0, -0.35);
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
     }
@@ -600,7 +611,9 @@
         const point = marker.anchor.getWorldPosition(new THREE.Vector3());
         point.project(cam);
         const visible = point.z < 1;
-        el.style.transform = `translate3d(${(point.x * 0.5 + 0.5) * innerWidth}px, ${(-point.y * 0.5 + 0.5) * innerHeight}px, 0)`;
+        const screenX = (point.x * 0.5 + 0.5) * innerWidth;
+        const screenY = (-point.y * 0.5 + 0.5) * innerHeight;
+        el.style.transform = `translate3d(${screenX - 24}px, ${screenY - 24}px, 0)`;
         el.hidden = !visible;
       });
     }
@@ -609,6 +622,7 @@
     zoomIn = () => setZoom(targetZoom * 1.2, getWorldPoint(innerWidth / 2, innerHeight / 2));
     zoomOut = () => setZoom(targetZoom / 1.2, getWorldPoint(innerWidth / 2, innerHeight / 2));
     zoomReset = () => resetViewport();
+    retryMap = () => void loadMap();
     applySelectionImpl = applySelection;
     rebuildMarkersImpl = rebuildMarkers;
 
@@ -629,6 +643,15 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="map-stage" bind:this={stageEl} role="application" tabindex="0" aria-label={mapAriaLabel}></div>
+
+{#if mapStatus === 'loading'}
+  <p class="map-status" role="status">Загружаем карту…</p>
+{:else if mapStatus === 'error'}
+  <div class="map-status map-status--error" role="alert">
+    <span>Карта временно недоступна.</span>
+    <button class="button button--ghost" type="button" onclick={() => retryMap()}>Повторить</button>
+  </div>
+{/if}
 
 <div class="event-markers" aria-label="Мероприятия на карте">
   {#each markers as marker (marker.key)}
@@ -651,6 +674,15 @@
 
 <ZoomControls onzoomin={() => zoomIn()} onzoomout={() => zoomOut()} onreset={() => zoomReset()} />
 <MapHint />
+<p class="map-attribution">
+  <span class="map-attribution__item">
+    Границы: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>
+  </span>
+  <span class="map-attribution__separator"> · </span>
+  <span class="map-attribution__item">
+    города: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap</a>
+  </span>
+</p>
 
 <style>
   .map-stage {
@@ -686,14 +718,49 @@
     pointer-events: none;
   }
 
+  .map-status {
+    position: fixed;
+    z-index: 6;
+    left: 50%;
+    top: 50%;
+    margin: 0;
+    padding: 10px 13px;
+    color: #91a9ba;
+    background: #071025;
+    font: 500 11px 'IBM Plex Mono', monospace;
+    transform: translate(-50%, -50%);
+  }
+
+  .map-status--error {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid #35536a;
+  }
+
+  .map-attribution {
+    position: fixed;
+    z-index: 5;
+    right: 12px;
+    bottom: 8px;
+    margin: 0;
+    color: #658198;
+    font: 500 9px 'IBM Plex Mono', monospace;
+    pointer-events: auto;
+  }
+
+  .map-attribution a {
+    color: #8db5c9;
+  }
+
   .event-marker {
     position: absolute;
     left: 0;
     top: 0;
     display: flex;
     align-items: center;
-    width: 0;
-    height: 0;
+    width: 48px;
+    height: 48px;
     border: 0;
     padding: 0;
     pointer-events: auto;
@@ -706,16 +773,13 @@
   .event-marker::before {
     content: '';
     position: absolute;
-    left: -22px;
-    top: -42px;
-    width: 48px;
-    height: 48px;
+    inset: 0;
   }
 
   .event-marker__pulse {
     position: absolute;
-    left: var(--flag-pulse-left, -20px);
-    bottom: -7px;
+    left: calc(50% + var(--flag-pulse-left, -20px));
+    bottom: calc(50% - 7px);
     width: var(--flag-pulse-width, 40px);
     height: var(--flag-pulse-height, 22px);
     border: 1px solid #ff7045;
@@ -734,8 +798,8 @@
 
   .event-marker__label {
     position: absolute;
-    left: var(--flag-label-offset, 33px);
-    bottom: 5px;
+    left: calc(50% + var(--flag-label-offset, 33px));
+    bottom: calc(50% + 5px);
     width: max-content;
     padding: 4px 7px;
     border: 1px solid #315069;
@@ -768,14 +832,11 @@
   }
 
   .event-marker--split::before {
-    left: -18px;
-    top: -36px;
-    width: 40px;
-    height: 42px;
+    inset: 0;
   }
 
   .event-marker--split .event-marker__label {
-    bottom: 2px;
+    bottom: calc(50% + 2px);
     max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -791,6 +852,25 @@
 
   @media (max-width: 760px) {
     .event-marker__label {
+      display: none;
+    }
+
+    .map-attribution {
+      left: 8px;
+      right: 8px;
+      bottom: 6px;
+      width: calc(100vw - 16px);
+      font-size: 8px;
+      line-height: 1.45;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .map-attribution__item {
+      display: block;
+    }
+
+    .map-attribution__separator {
       display: none;
     }
   }

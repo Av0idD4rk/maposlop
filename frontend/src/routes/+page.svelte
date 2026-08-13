@@ -1,30 +1,48 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchEvents } from '$lib/api';
-  import { events, eventsStatus } from '$lib/stores';
+  import type { Component } from 'svelte';
+  import { reloadEvents } from '$lib/event-data';
   import Topbar from '$lib/components/Topbar.svelte';
-  import MapStage from '$lib/components/MapStage.svelte';
   import RegionPanel from '$lib/components/RegionPanel.svelte';
   import EventModal from '$lib/components/EventModal.svelte';
+  import EventCatalog from '$lib/components/EventCatalog.svelte';
   import SuggestModal from '$lib/components/SuggestModal.svelte';
 
+  let MapComponent = $state<Component | null>(null);
+  let mapModuleError = $state(false);
+
+  async function loadMapModule() {
+    mapModuleError = false;
+    try {
+      MapComponent = (await import('$lib/components/MapStage.svelte')).default;
+    } catch {
+      mapModuleError = true;
+    }
+  }
+
   onMount(() => {
-    fetchEvents()
-      .then((data) => {
-        events.set(data);
-        eventsStatus.set('ready');
-      })
-      .catch(() => eventsStatus.set('error'));
+    void reloadEvents();
+    void loadMapModule();
   });
 </script>
 
-<a class="skip-link" href="#region-panel">К информации о регионе</a>
+<a class="skip-link" href="#catalog-button">К списку событий</a>
 <main class="map-shell">
   <Topbar />
-  <MapStage />
+  {#if MapComponent}
+    <MapComponent />
+  {:else if mapModuleError}
+    <div class="map-module-state" role="alert">
+      <span>Карта временно недоступна.</span>
+      <button class="button button--ghost" type="button" onclick={loadMapModule}>Повторить</button>
+    </div>
+  {:else}
+    <p class="map-module-state" role="status">Загружаем карту…</p>
+  {/if}
   <RegionPanel />
 </main>
 
+<EventCatalog />
 <EventModal />
 <SuggestModal />
 
@@ -50,5 +68,21 @@
       linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
     background-size: 48px 48px;
     mask-image: linear-gradient(to bottom, black, transparent 80%);
+  }
+
+  .map-module-state {
+    position: fixed;
+    z-index: 6;
+    left: 50%;
+    top: 50%;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 0;
+    padding: 10px 13px;
+    color: #91a9ba;
+    background: #071025;
+    font: 500 11px ui-monospace, 'SFMono-Regular', Consolas, monospace;
+    transform: translate(-50%, -50%);
   }
 </style>

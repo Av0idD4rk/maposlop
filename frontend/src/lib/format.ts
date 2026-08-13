@@ -28,9 +28,15 @@ export function nearestLabel(event: CtfEvent): string {
 }
 
 export function eventCountLabel(count: number): string {
-  return count ? `${count} ближайших CTF` : 'Добавьте первый CTF';
+  return count ? `${count} ${count === 1 ? 'ближайший' : 'ближайших'} CTF` : 'Добавьте первый CTF';
 }
 
 export function eventWord(count: number): string {
-  return count === 1 ? 'ближайшее событие' : 'ближайших события';
+  const modulo100 = Math.abs(count) % 100;
+  const modulo10 = modulo100 % 10;
+  if (modulo10 === 1 && modulo100 !== 11) return 'ближайшее событие';
+  if (modulo10 >= 2 && modulo10 <= 4 && (modulo100 < 12 || modulo100 > 14)) {
+    return 'ближайших события';
+  }
+  return 'ближайших событий';
 }
