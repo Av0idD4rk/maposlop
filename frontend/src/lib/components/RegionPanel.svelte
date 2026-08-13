@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { events, selectedRegionId, regionNames, activeEvent, suggestOpen } from '$lib/stores';
+  import { events, heatEvents, heatMonths, mapMode, selectedRegionId, regionNames, activeEvent, suggestOpen } from '$lib/stores';
   import { canonicalRegionId } from '$lib/regions';
   import { eventWord } from '$lib/format';
   import EventCard from './EventCard.svelte';
@@ -8,9 +8,20 @@
   let canonical = $derived($selectedRegionId);
   let isOpen = $derived(canonical !== null);
   let title = $derived(canonical ? ($regionNames.get(canonical) ?? `Регион ${canonical}`) : 'Где играем?');
-  let items = $derived(
-    canonical ? $events.filter((event) => canonicalRegionId(event.regionCode) === canonical) : [],
-  );
+  let items = $derived.by(() => {
+    if (!canonical) return [];
+    if ($mapMode === 'events') {
+      return $events.filter((event) => canonicalRegionId(event.regionCode) === canonical);
+    }
+    const now = Date.now();
+    const cutoff = now - $heatMonths * 31 * 86_400_000;
+    return $heatEvents
+      .filter((event) => {
+        const started = new Date(event.startsAt).getTime();
+        return canonicalRegionId(event.regionCode) === canonical && started >= cutoff && started <= now;
+      })
+      .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+  });
 
   function openEvent(event: CtfEvent) {
     activeEvent.set(event);
@@ -19,24 +30,40 @@
   function openSuggest() {
     suggestOpen.set(true);
   }
+
+  function closeRegion() {
+    selectedRegionId.set(null);
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !isOpen) return;
+    if (document.querySelector('dialog[open]')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeRegion();
+  }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <aside class="side-panel" class:is-open={isOpen} id="region-panel" aria-live="polite" aria-labelledby="panel-title">
   <button
     class="icon-button side-panel__close"
     type="button"
     aria-label="Закрыть"
-    onclick={() => selectedRegionId.set(null)}
+    onclick={closeRegion}
   >
     ×
   </button>
-  <p class="eyebrow">{canonical ? 'ВЫБРАННЫЙ РЕГИОН' : 'ВЫБЕРИТЕ РЕГИОН'}</p>
+  <p class="eyebrow">{canonical ? ($mapMode === 'heat' ? 'ИСТОРИЯ РЕГИОНА' : 'ВЫБРАННЫЙ РЕГИОН') : 'ВЫБЕРИТЕ РЕГИОН'}</p>
   <h2 id="panel-title">{title}</h2>
   <div class="panel-content">
     {#if !canonical}
       <p class="empty-copy">Нажмите на регион карты, чтобы увидеть ближайшие CTF.</p>
     {:else if items.length}
-      <p class="panel-count">{items.length} {eventWord(items.length)}</p>
+      <p class="panel-count">
+        {items.length} {eventWord(items.length)}{$mapMode === 'heat' ? ` · за ${$heatMonths} мес.` : ''}
+      </p>
       <div class="event-list">
         {#each items as event (event.id)}
           <EventCard {event} onselect={openEvent} />
@@ -45,9 +72,11 @@
     {:else}
       <div class="empty-state">
         <span>⚑</span>
-        <h3>Пока тихо</h3>
-        <p>В этом регионе нет опубликованных CTF. Знаете о событии?</p>
-        <button class="button button--ghost" type="button" onclick={openSuggest}>Предложить CTF</button>
+        <h3>{$mapMode === 'heat' ? 'Нет истории' : 'Пока тихо'}</h3>
+        <p>{$mapMode === 'heat' ? `За последние ${$heatMonths} мес. прошедших CTF не найдено.` : 'В этом регионе нет опубликованных CTF. Знаете о событии?'}</p>
+        {#if $mapMode === 'events'}
+          <button class="button button--ghost" type="button" onclick={openSuggest}>Предложить CTF</button>
+        {/if}
       </div>
     {/if}
   </div>

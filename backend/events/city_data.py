@@ -26,4 +26,28 @@ CITY_SEEDS = (
         "source_url": "https://www.openstreetmap.org/?mlat=55.030204&mlon=82.920430#map=12/55.030204/82.920430",
         "location_verified": True,
     },
+    {
+        "name": "Казань", "region_code": "16", "latitude": "55.796127", "longitude": "49.106414",
+        "geodata_source": "OpenStreetMap contributors / seed_demo",
+        "source_url": "https://www.openstreetmap.org/?mlat=55.796127&mlon=49.106414#map=12/55.796127/49.106414",
+        "location_verified": True,
+    },
+    {
+        "name": "Санкт-Петербург", "region_code": "78", "latitude": "59.938784", "longitude": "30.314997",
+        "geodata_source": "OpenStreetMap contributors / seed_demo",
+        "source_url": "https://www.openstreetmap.org/?mlat=59.938784&mlon=30.314997#map=12/59.938784/30.314997",
+        "location_verified": True,
+    },
+    {
+        "name": "Томск", "region_code": "70", "latitude": "56.484645", "longitude": "84.947649",
+        "geodata_source": "OpenStreetMap contributors / seed_demo",
+        "source_url": "https://www.openstreetmap.org/?mlat=56.484645&mlon=84.947649#map=12/56.484645/84.947649",
+        "location_verified": True,
+    },
+    {
+        "name": "Владивосток", "region_code": "25", "latitude": "43.115542", "longitude": "131.885494",
+        "geodata_source": "OpenStreetMap contributors / seed_demo",
+        "source_url": "https://www.openstreetmap.org/?mlat=43.115542&mlon=131.885494#map=12/43.115542/131.885494",
+        "location_verified": True,
+    },
 )

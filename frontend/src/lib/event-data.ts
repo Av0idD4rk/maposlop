@@ -1,5 +1,5 @@
-import { fetchEvents } from './api';
-import { events, eventsStatus } from './stores';
+import { fetchEvents, fetchHeatEvents } from './api';
+import { events, eventsStatus, heatEvents } from './stores';
 
 export async function reloadEvents(): Promise<void> {
   eventsStatus.set('loading');
@@ -9,4 +9,8 @@ export async function reloadEvents(): Promise<void> {
   } catch {
     eventsStatus.set('error');
   }
+}
+
+export async function loadHeatEvents(): Promise<void> {
+  heatEvents.set(await fetchHeatEvents(24));
 }

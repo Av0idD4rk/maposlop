@@ -17,10 +17,26 @@ export async function fetchEvents(): Promise<CtfEvent[]> {
   return data.events as CtfEvent[];
 }
 
+export async function fetchHeatEvents(months = 24): Promise<CtfEvent[]> {
+  const result: CtfEvent[] = [];
+  let page = 1;
+  let pages = 1;
+  do {
+    const response = await fetch(`/api/v1/events/?history_months=${months}&limit=200&page=${page}`);
+    if (!response.ok) throw new Error('Heat map data unavailable');
+    const data = await response.json();
+    result.push(...data.events as CtfEvent[]);
+    pages = data.pagination?.pages ?? 1;
+    page += 1;
+  } while (page <= pages);
+  return result;
+}
+
 export type SubmissionPayload = {
   title: string;
   regionCode: string;
   city: string;
+  participationMode: 'offline' | 'hybrid' | 'online';
   startsAt: string;
   endsAt?: string;
   website: string;

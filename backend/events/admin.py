@@ -83,7 +83,7 @@ def create_events(modeladmin, request, queryset):
             event = Event(
                 title=item.title, region_code=city_ref.region_code if city_ref else item.region_code,
                 city_ref=city_ref, starts_at=item.starts_at, ends_at=end,
-                description=item.details, website=item.website, published=True,
+                format=item.format, description=item.details, website=item.website, published=True,
             )
             event.full_clean()
             event.save()
@@ -96,8 +96,8 @@ def create_events(modeladmin, request, queryset):
 @admin.register(EventSubmission)
 class EventSubmissionAdmin(admin.ModelAdmin):
     form = SubmissionAdminForm
-    list_display = ("title", "region_label", "starts_at", "contact_email", "status", "created_at")
-    list_filter = ("status", "region_label")
+    list_display = ("title", "region_label", "starts_at", "format", "contact_email", "status", "created_at")
+    list_filter = ("status", "format", "region_label")
     search_fields = ("title", "contact_email", "details")
     readonly_fields = ("created_at",)
     actions = (create_events,)

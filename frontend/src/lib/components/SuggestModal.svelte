@@ -6,6 +6,7 @@
   let title = $state('');
   let regionCode = $state('');
   let city = $state('');
+  let participationMode = $state<'offline' | 'hybrid' | 'online'>('offline');
   let startsAt = $state('');
   let endsAt = $state('');
   let website = $state('');
@@ -30,6 +31,7 @@
     title = '';
     regionCode = '';
     city = '';
+    participationMode = 'offline';
     startsAt = '';
     endsAt = '';
     website = '';
@@ -49,6 +51,7 @@
         title,
         regionCode,
         city,
+        participationMode,
         startsAt: new Date(startsAt).toISOString(),
         endsAt: endsAt ? new Date(endsAt).toISOString() : undefined,
         website,
@@ -96,6 +99,12 @@
       </select>
     </label>
     <label><span>Город</span><input bind:value={city} maxlength="120" placeholder="Москва" /></label>
+    <fieldset class="participation-mode">
+      <legend>Формат участия *</legend>
+      <label><input type="radio" bind:group={participationMode} value="offline" /><span>Очно</span></label>
+      <label><input type="radio" bind:group={participationMode} value="hybrid" /><span>Гибрид</span></label>
+      <label><input type="radio" bind:group={participationMode} value="online" /><span>Удалённо</span></label>
+    </fieldset>
     <div class="form-row">
       <label><span>Начало *</span><input type="datetime-local" bind:value={startsAt} required /></label>
       <label><span>Окончание</span><input type="datetime-local" bind:value={endsAt} /></label>
@@ -142,6 +151,63 @@
     font: 600 9px 'IBM Plex Mono';
     letter-spacing: 0.07em;
     text-transform: uppercase;
+  }
+
+  .participation-mode {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .participation-mode legend {
+    grid-column: 1 / -1;
+    margin-bottom: 7px;
+    color: #89a2b6;
+    font: 600 9px 'IBM Plex Mono';
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .participation-mode label {
+    position: relative;
+    display: block;
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  .participation-mode input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  .participation-mode label > span {
+    display: grid;
+    min-height: 44px;
+    place-items: center;
+    padding: 8px;
+    border: 1px solid #304b60;
+    border-radius: 7px;
+    color: #b4c6d5;
+    background: #071025;
+    font: 600 11px 'IBM Plex Mono';
+    text-transform: none;
+    transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  }
+
+  .participation-mode input:checked + span {
+    border-color: var(--cyan);
+    color: #e9fcff;
+    background: rgba(57, 231, 255, 0.1);
+  }
+
+  .participation-mode input:focus-visible + span {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
   }
 
   .suggest-form input,

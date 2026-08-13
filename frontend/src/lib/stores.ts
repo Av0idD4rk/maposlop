@@ -3,6 +3,9 @@ import type { CtfEvent } from './types';
 
 export const events = writable<CtfEvent[]>([]);
 export const eventsStatus = writable<'loading' | 'ready' | 'error'>('loading');
+export const heatEvents = writable<CtfEvent[]>([]);
+export const mapMode = writable<'events' | 'heat'>('events');
+export const heatMonths = writable<number>(6);
 
 /** Canonical (composite-merged) region id of the region currently open in the side panel. */
 export const selectedRegionId = writable<string | null>(null);

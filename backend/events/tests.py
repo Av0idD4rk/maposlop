@@ -74,6 +74,22 @@ class PublicApiTests(TestCase):
             400,
         )
 
+    def test_events_api_can_return_recent_history_for_heat_map(self):
+        now = timezone.now()
+        past = Event.objects.create(
+            title="Past Heat CTF", region_code="54", starts_at=now - timedelta(days=20),
+            ends_at=now - timedelta(days=19), description="History", published=True,
+        )
+        regular_ids = {item["id"] for item in self.client.get(reverse("events-api")).json()["events"]}
+        heat_ids = {item["id"] for item in self.client.get(reverse("events-api"), {"history_months": 2}).json()["events"]}
+        self.assertNotIn(past.id, regular_ids)
+        self.assertIn(past.id, heat_ids)
+        self.assertIn(self.event.id, heat_ids)
+
+    def test_heat_map_history_rejects_unsupported_period(self):
+        response = self.client.get(reverse("events-api"), {"history_months": 25})
+        self.assertEqual(response.status_code, 400)
+
     def test_submission_is_saved_for_moderation(self):
         start = timezone.now() + timedelta(days=4)
         response = self.client.post(reverse("submissions-api"), data=json.dumps({
@@ -82,6 +98,35 @@ class PublicApiTests(TestCase):
         }), content_type="application/json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(EventSubmission.objects.get().status, EventSubmission.Status.NEW)
+
+    def test_submission_defaults_to_offline_participation(self):
+        start = timezone.now() + timedelta(days=4)
+        response = self.client.post(reverse("submissions-api"), data=json.dumps({
+            "title": "Default CTF", "regionCode": "54", "startsAt": start.isoformat(),
+            "details": "Details", "contactName": "Tester", "contactEmail": "test@example.com",
+        }), content_type="application/json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(EventSubmission.objects.get().format, Event.Format.OFFLINE)
+
+    def test_submission_saves_selected_participation_mode(self):
+        start = timezone.now() + timedelta(days=4)
+        response = self.client.post(reverse("submissions-api"), data=json.dumps({
+            "title": "Hybrid CTF", "regionCode": "54", "startsAt": start.isoformat(),
+            "participationMode": "hybrid", "details": "Details",
+            "contactName": "Tester", "contactEmail": "test@example.com",
+        }), content_type="application/json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(EventSubmission.objects.get().format, Event.Format.HYBRID)
+
+    def test_submission_rejects_unknown_participation_mode(self):
+        start = timezone.now() + timedelta(days=4)
+        response = self.client.post(reverse("submissions-api"), data=json.dumps({
+            "title": "Unknown CTF", "regionCode": "54", "startsAt": start.isoformat(),
+            "participationMode": "somewhere", "details": "Details",
+            "contactName": "Tester", "contactEmail": "test@example.com",
+        }), content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(EventSubmission.objects.count(), 0)
 
     def test_invalid_region_is_rejected(self):
         response = self.client.post(reverse("submissions-api"), data=json.dumps({

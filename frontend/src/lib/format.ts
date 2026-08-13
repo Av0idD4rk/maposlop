@@ -18,11 +18,21 @@ export function shortDateText(date: string): string {
 }
 
 export function pulseClass(event: CtfEvent): string {
+  if (eventTiming(event) === 'live') return 'marker--live';
   const days = daysUntil(event.startsAt);
   return days <= 3 ? 'marker--hot' : days <= 14 ? 'marker--soon' : 'marker--calm';
 }
 
+export function eventTiming(event: CtfEvent): 'live' | 'soon' | 'calm' {
+  const now = Date.now();
+  const start = new Date(event.startsAt).getTime();
+  const end = new Date(event.endsAt).getTime();
+  if (start <= now && end >= now) return 'live';
+  return start > now && start - now <= 14 * 86_400_000 ? 'soon' : 'calm';
+}
+
 export function nearestLabel(event: CtfEvent): string {
+  if (eventTiming(event) === 'live') return 'Идёт сейчас';
   const days = Math.ceil(daysUntil(event.startsAt));
   return days <= 0 ? 'Сегодня' : days === 1 ? 'Завтра' : `через ${days} дн.`;
 }

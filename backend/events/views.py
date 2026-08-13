@@ -8,6 +8,7 @@ from django.core.exceptions import RequestDataTooBig, ValidationError
 from django.db import connection
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
+from datetime import timedelta
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
@@ -77,7 +78,20 @@ def events_api(request):
             {"ok": False, "errors": {"pagination": ["page должен быть не меньше 1, limit — от 1 до 200."]}},
             status=400,
         )
-    events = Event.objects.select_related("city_ref").filter(published=True, ends_at__gte=timezone.now())
+    history_months = request.GET.get("history_months")
+    if history_months:
+        try:
+            months = int(history_months)
+        except ValueError:
+            months = 0
+        if not 1 <= months <= 24:
+            return JsonResponse({"ok": False, "errors": {"history_months": ["Допустимо от 1 до 24 месяцев."]}}, status=400)
+        now = timezone.now()
+        events = Event.objects.select_related("city_ref").filter(
+            published=True, starts_at__gte=now - timedelta(days=months * 31),
+        )
+    else:
+        events = Event.objects.select_related("city_ref").filter(published=True, ends_at__gte=timezone.now())
     region = request.GET.get("region")
     if region:
         canonical = canonical_region_code(region)
@@ -146,6 +160,7 @@ def submissions_api(request):
             return response
         submission = EventSubmission(
             title=_json_text(data, "title"),
+            format=_json_text(data, "participationMode") or Event.Format.OFFLINE,
             region_code=_json_text(data, "regionCode"),
             city=_json_text(data, "city"),
             starts_at=data.get("startsAt"),

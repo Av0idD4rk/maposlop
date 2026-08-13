@@ -6,8 +6,8 @@
   import type { FeatureCollection, Geometry } from 'geojson';
   import { assets } from '$app/paths';
   import { canonicalRegionId, regionMembers, compositeName, colorForRegion } from '$lib/regions';
-  import { events, selectedRegionId, regionNames, activeEvent } from '$lib/stores';
-  import { dateText, pulseClass, nearestLabel } from '$lib/format';
+  import { events, heatEvents, heatMonths, mapMode, selectedRegionId, regionNames } from '$lib/stores';
+  import { eventTiming, pulseClass, nearestLabel } from '$lib/format';
   import type { CtfEvent, Region } from '$lib/types';
   import ZoomControls from './ZoomControls.svelte';
   import MapHint from './MapHint.svelte';
@@ -16,6 +16,8 @@
     userData: {
       region: Region;
       targetLift: number;
+      targetColor: THREE.Color;
+      heatColor: THREE.Color;
       outline?: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
     };
   };
@@ -54,6 +56,7 @@
   // only ever invoke them after mapReady flips true, so the indirection is safe.
   let applySelectionImpl: (id: string | null, isSubsequent: boolean) => void = () => {};
   let rebuildMarkersImpl: (currentEvents: CtfEvent[], selected: string | null) => void = () => {};
+  let applyHeatMapImpl: (mode: 'events' | 'heat', months: number, history: CtfEvent[]) => void = () => {};
 
   const markerRefs = new Map<string, HTMLButtonElement>();
   function markerRef(node: HTMLButtonElement, key: string) {
@@ -79,7 +82,12 @@
 
   $effect(() => {
     if (!mapReady) return;
-    rebuildMarkersImpl($events, $selectedRegionId);
+    rebuildMarkersImpl($mapMode === 'events' ? $events : [], $selectedRegionId);
+  });
+
+  $effect(() => {
+    if (!mapReady) return;
+    applyHeatMapImpl($mapMode, $heatMonths, $heatEvents);
   });
 
   // --- Everything below is imperative Three.js setup, mirroring a classic
@@ -120,12 +128,6 @@
     const rim = new THREE.DirectionalLight(0x607cff, 2.2);
     rim.position.set(12, 4, 10);
     scene.add(rim);
-    const shadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(29, 17),
-      new THREE.MeshBasicMaterial({ color: 0x020719, transparent: true, opacity: 0.3, depthWrite: false }),
-    );
-    shadow.position.z = -0.74;
-    mapViewport.add(shadow);
     const meshes: RegionMesh[] = [];
     const meshById = new Map<string, RegionMesh[]>();
     const regionsById = new Map<string, Region>();
@@ -134,6 +136,7 @@
     const pointer = new THREE.Vector2();
     const mapPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const targetPosition = new THREE.Vector3();
+    const normalizedMapSize = new THREE.Vector2(22.5, 11);
 
     let selectedId: string | null = null;
     let hoveredId: string | null = null;
@@ -143,6 +146,7 @@
     let panning = false;
     const pointerStart = new THREE.Vector2();
     let panAnchor: THREE.Vector3 | null = null;
+    let heatMapActive = false;
     const regionNamesLocal = new Map<string, string>();
 
     function setZoom(value: number, anchor: THREE.Vector3 | null = null) {
@@ -152,6 +156,20 @@
         targetPosition.copy(anchor).addScaledVector(local, -next);
       }
       targetZoom = next;
+      clampViewport();
+    }
+    function visibleHalfExtents() {
+      const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * camera.position.z;
+      return new THREE.Vector2(halfHeight * camera.aspect, halfHeight);
+    }
+    function clampViewport() {
+      const visible = visibleHalfExtents();
+      const mapHalfWidth = normalizedMapSize.x * targetZoom * 0.5;
+      const mapHalfHeight = normalizedMapSize.y * targetZoom * 0.5;
+      const maxX = Math.max(0, mapHalfWidth - visible.x * 0.42);
+      const maxY = Math.max(0, mapHalfHeight - visible.y * 0.42);
+      targetPosition.x = THREE.MathUtils.clamp(targetPosition.x, -maxX, maxX);
+      targetPosition.y = THREE.MathUtils.clamp(targetPosition.y, -maxY, maxY);
     }
     function resetViewport() {
       targetZoom = 1;
@@ -180,17 +198,14 @@
         const id = canonicalRegionId(mesh.userData.region.id);
         const active = id === selectedId;
         const hover = id === hoveredId;
-        const baseColor = new THREE.Color(mesh.userData.region.color);
+        const baseColor = mesh.userData.heatColor.clone();
         mesh.userData.targetLift = hover ? 0.76 : active ? 0.28 : 0;
-        mesh.material.color.copy(baseColor);
-        mesh.material.emissive.copy(baseColor).multiplyScalar(0.03);
+        mesh.userData.targetColor.copy(baseColor);
         if (active) {
-          mesh.material.color.lerp(new THREE.Color(0xcff9ff), 0.55);
-          mesh.material.emissive.set(0x62eaff).multiplyScalar(0.35);
+          mesh.userData.targetColor.lerp(new THREE.Color(stage.classList.contains('is-heat-map') ? 0xffe0a3 : 0xcff9ff), 0.36);
         }
         if (hover) {
-          mesh.material.color.lerp(new THREE.Color(0x00e5ff), 0.7);
-          mesh.material.emissive.set(0x00d8ff).multiplyScalar(0.72);
+          mesh.userData.targetColor.lerp(new THREE.Color(stage.classList.contains('is-heat-map') ? 0xffffff : 0x00e5ff), 0.28);
         }
         if (mesh.userData.outline) {
           mesh.userData.outline.material.color.set(hover ? 0xffffff : active ? 0xbffaff : 0x69bde9);
@@ -220,6 +235,7 @@
       normalizedCenter.applyMatrix4(mapGroup.matrix);
       targetZoom = regionZoom;
       targetPosition.set(desiredPoint.x - normalizedCenter.x * regionZoom, desiredPoint.y - normalizedCenter.y * regionZoom, 0);
+      clampViewport();
     }
     function normalizeMap() {
       const bounds = new THREE.Box3().setFromObject(mapGroup);
@@ -228,6 +244,7 @@
       const scale = 22.5 / Math.max(size.x, size.y);
       mapGroup.scale.set(scale, -scale, scale);
       mapGroup.position.set(-center.x * scale, center.y * scale + 0.62, 0);
+      normalizedMapSize.set(size.x * scale, size.y * scale);
     }
     function addRegion(id: string, name: string, paths: THREE.ShapePath[]) {
       const region: Region = { id, name: id === '78' ? 'Санкт-Петербург' : name, fragments: paths.length, color: colorForRegion(id) };
@@ -252,7 +269,12 @@
             side: THREE.DoubleSide,
           });
           const mesh = new THREE.Mesh(geometry, material) as RegionMesh;
-          mesh.userData = { region, targetLift: 0 };
+          mesh.userData = {
+            region,
+            targetLift: 0,
+            targetColor: new THREE.Color(region.color),
+            heatColor: new THREE.Color(region.color),
+          };
           const points = shape.getPoints(1).map((p) => new THREE.Vector3(p.x, p.y, 0.012));
           if (points.length > 2) {
             points.push(points[0].clone());
@@ -280,6 +302,7 @@
     async function loadMap() {
       mapStatus = 'loading';
       stage.classList.add('is-loading');
+      let loaded = false;
       try {
         const data = await fetch(`${assets}/map/russia-regions.geojson`).then((r) => {
           if (!r.ok) throw new Error('Map unavailable');
@@ -302,10 +325,8 @@
         });
         normalizeMap();
         populateRegions();
-        mapReady = true;
-        mapStatus = 'ready';
-        const initial = new URLSearchParams(location.hash.slice(1)).get('region');
-        if (initial && meshById.has(initial)) selectedRegionId.set(canonicalRegionId(initial));
+        loaded = meshes.length > 0;
+        if (!loaded) throw new Error('Map contains no renderable regions');
       } catch (error) {
         console.error(error);
         mapAriaLabel = 'Не удалось загрузить карту';
@@ -313,11 +334,20 @@
       } finally {
         stage.classList.remove('is-loading');
       }
+      if (!loaded) return;
+
+      // Markers are a separate enhancement: malformed event data must never turn
+      // a successfully rendered map into the generic map-loading error state.
+      mapStatus = 'ready';
+      mapReady = true;
+      const initial = new URLSearchParams(location.hash.slice(1)).get('region');
+      if (initial && regionMeshes(initial).length) selectedRegionId.set(canonicalRegionId(initial));
     }
 
     const flagPoleGeometry = new THREE.CylinderGeometry(0.48, 0.68, 1, 8);
     const flagBaseGeometry = new THREE.CylinderGeometry(2.5, 3.1, 1.15, 12);
     const flagCollarGeometry = new THREE.SphereGeometry(0.82, 8, 6);
+    const flagGlowGeometry = new THREE.RingGeometry(3.6, 8.4, 32);
     const flagPoleMaterial = new THREE.MeshStandardMaterial({ color: 0xd8e5e8, roughness: 0.28, metalness: 0.72, emissive: 0x161d20 });
     const flagBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x27343e, roughness: 0.48, metalness: 0.55, emissive: 0x080b0d });
     const flagClothMaterial = new THREE.MeshStandardMaterial({
@@ -334,10 +364,11 @@
         child.traverse((object) => {
           const mesh = object as THREE.Mesh;
           if (mesh.userData.ownedGeometry) mesh.geometry.dispose();
+          if (mesh.userData.ownedMaterial) (mesh.material as THREE.Material).dispose();
         });
       }
     }
-    function create3dFlag(origin: THREE.Vector3, target: THREE.Vector3, scale: number, targetScale = scale) {
+    function create3dFlag(origin: THREE.Vector3, target: THREE.Vector3, scale: number, event: CtfEvent, targetScale = scale) {
       const group = new THREE.Group();
       const root = new THREE.Vector3(0, 0, 0.25);
       const tip = new THREE.Vector3(0, -14, 12);
@@ -360,99 +391,109 @@
       clothGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
       clothGeometry.setIndex([0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5]);
       clothGeometry.computeVertexNormals();
-      const cloth = new THREE.Mesh(clothGeometry, flagClothMaterial);
+      const clothMaterial = flagClothMaterial.clone();
+      const cloth = new THREE.Mesh(clothGeometry, clothMaterial);
       cloth.position.copy(tip);
       cloth.userData.ownedGeometry = true;
-      group.add(base3d, pole, topCollar, bottomCollar, cloth);
-      group.position.set(origin.x, origin.y, 0.35);
+      cloth.userData.ownedMaterial = true;
+      const timing = eventTiming(event);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: timing === 'live' ? 0xff3028 : 0xff7a32,
+        transparent: true,
+        opacity: timing === 'calm' ? 0 : 0.32,
+        depthTest: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      });
+      const glow = new THREE.Mesh(flagGlowGeometry, glowMaterial);
+      // The glow sits above the map but below the opaque base and flagpole.
+      glow.position.z = 0.05;
+      glow.renderOrder = -1;
+      glow.userData.ownedMaterial = true;
+      group.add(glow, base3d, pole, topCollar, bottomCollar, cloth);
+      group.position.set(origin.x, origin.y, 1.25);
       group.scale.setScalar(scale * compactFlagScale);
-      group.userData.targetPosition = new THREE.Vector3(target.x, target.y, 0.35);
+      group.userData.targetPosition = new THREE.Vector3(target.x, target.y, 1.25);
       group.userData.targetScale = targetScale * compactFlagScale;
+      group.userData.timing = timing;
+      group.userData.glowMaterial = glowMaterial;
+      group.userData.clothMaterial = clothMaterial;
+      group.userData.phase = event.id * 0.73;
       flagLayer.add(group);
       return group;
     }
-    function splitFlagPosition(center: THREE.Vector3, index: number, total: number) {
-      if (total === 1) return center.clone();
-      const ring = Math.floor(index / 6);
-      const itemsInRing = Math.min(6, total - ring * 6);
-      const indexInRing = index % 6;
-      const angle = -Math.PI / 2 + (Math.PI * 2 * indexInRing) / itemsInRing;
-      const radius = 13 + ring * 11;
-      return center.clone().add(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0));
-    }
-
-    function eventPoint(event: CtfEvent, regionId: string) {
-      if (event.locationPrecision === 'city' && event.longitude !== null && event.latitude !== null && mapProjection) {
-        const point = mapProjection([event.longitude, event.latitude]);
-        if (point) return new THREE.Vector3(point[0], point[1], 0);
-      }
-      return regionCenter(regionId);
-    }
-
-    function locationKey(event: CtfEvent) {
-      return event.locationPrecision === 'city' && event.longitude !== null && event.latitude !== null
-        ? `city:${event.longitude}:${event.latitude}`
-        : 'region-center';
-    }
-
     function rebuildMarkers(currentEvents: CtfEvent[], selected: string | null) {
       clear3dFlags();
-      const grouped = new Map<string, Map<string, CtfEvent[]>>();
+      const grouped = new Map<string, CtfEvent[]>();
       currentEvents.forEach((event) => {
         const id = canonicalRegionId(event.regionCode);
-        const regionGroup = grouped.get(id) ?? new Map<string, CtfEvent[]>();
-        const key = locationKey(event);
-        const locationGroup = regionGroup.get(key) ?? [];
-        locationGroup.push(event);
-        regionGroup.set(key, locationGroup);
-        grouped.set(id, regionGroup);
+        grouped.set(id, [...(grouped.get(id) ?? []), event]);
       });
       const next: MarkerVM[] = [];
-      grouped.forEach((locations, groupId) => {
-        let regionIndex = 0;
-        locations.forEach((locationEvents, locationId) => {
-          const event = locationEvents[0];
-          const count = locationEvents.length;
-          const center = eventPoint(event, groupId);
-          if (!center) return;
-          const aggregateScale = Math.min(1.66, 1 + Math.log2(count) * 0.22);
-          if (selected === groupId) {
-            locationEvents.forEach((item, index) => {
-              regionIndex += 1;
-              const target = splitFlagPosition(center, index, count);
-              const flag = create3dFlag(center, target, index === 0 ? aggregateScale : 0.12, 0.64);
-              next.push({
-                key: `${groupId}-${item.id}`,
-                className: `event-marker event-marker--split ${pulseClass(item)}`,
-                ariaLabel: `${item.title}, ${item.city || item.regionName}, ${dateText(item.startsAt)}`,
-                label: `${regionIndex}. ${item.title}`,
-                pulseWidth: '22px',
-                pulseLeft: '-11px',
-                pulseHeight: '11px',
-                labelOffset: '16px',
-                anchor: flag,
-                onclick: () => activeEvent.set(item),
-              });
-            });
-          } else {
-            const flag = create3dFlag(center, center, aggregateScale);
-            const place = event.locationPrecision === 'city' ? event.city : regionNamesLocal.get(groupId) ?? groupId;
-            next.push({
-              key: `${groupId}-${locationId}-agg`,
-              className: `event-marker ${pulseClass(event)}`,
-              ariaLabel: `${count} CTF, ${place}. Выбрать регион`,
-              label: `${count} CTF · ${place || nearestLabel(event)}`,
-              pulseWidth: `${32 * aggregateScale}px`,
-              pulseLeft: `${-16 * aggregateScale}px`,
-              pulseHeight: `${16 * aggregateScale}px`,
-              labelOffset: `${16 + 10 * aggregateScale}px`,
-              anchor: flag,
-              onclick: () => selectedRegionId.set(groupId),
-            });
-          }
+      grouped.forEach((regionEvents, groupId) => {
+        if (!regionEvents.length || !regionMeshes(groupId).length) return;
+        const count = regionEvents.length;
+        const center = regionCenter(groupId);
+        if (![center.x, center.y, center.z].every(Number.isFinite)) return;
+        const aggregateScale = 1 + (Math.min(count, 3) - 1) * 0.17;
+        const urgentEvent = [...regionEvents].sort((a, b) => {
+          const rank = (item: CtfEvent) => eventTiming(item) === 'live' ? 0 : eventTiming(item) === 'soon' ? 1 : 2;
+          return rank(a) - rank(b) || new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+        })[0];
+        const flag = create3dFlag(center, center, aggregateScale, urgentEvent);
+        const place = regionNamesLocal.get(groupId) ?? urgentEvent.regionName ?? groupId;
+        next.push({
+          key: `${groupId}-aggregate`,
+          className: `event-marker ${pulseClass(urgentEvent)}`,
+          ariaLabel: `${count} CTF, ${place}. ${selected === groupId ? 'Регион выбран' : 'Выбрать регион'}`,
+          label: `${count} CTF · ${place || nearestLabel(urgentEvent)}`,
+          pulseWidth: `${32 * aggregateScale}px`,
+          pulseLeft: `${-16 * aggregateScale}px`,
+          pulseHeight: `${16 * aggregateScale}px`,
+          labelOffset: `${16 + 10 * aggregateScale}px`,
+          anchor: flag,
+          onclick: () => selectedRegionId.set(groupId),
         });
       });
       markers = next;
+    }
+
+    function applyHeatMap(mode: 'events' | 'heat', months: number, history: CtfEvent[]) {
+      const cutoff = Date.now() - months * 31 * 86_400_000;
+      const counts = new Map<string, number>();
+      if (mode === 'heat') {
+        history.forEach((event) => {
+          const started = new Date(event.startsAt).getTime();
+          if (started < cutoff) return;
+          const id = canonicalRegionId(event.regionCode);
+          counts.set(id, (counts.get(id) ?? 0) + 1);
+        });
+      }
+      const maximum = Math.max(1, ...counts.values());
+      meshes.forEach((mesh) => {
+        const base = new THREE.Color(mesh.userData.region.color);
+        if (mode === 'events') {
+          mesh.userData.heatColor.copy(base);
+          return;
+        }
+        const count = counts.get(canonicalRegionId(mesh.userData.region.id)) ?? 0;
+        // A single global scale keeps every region comparable: 5 of 10 CTF = 50% heat.
+        const intensity = count / maximum;
+        const cold = new THREE.Color(0x17235c);
+        const medium = new THREE.Color(0xffd23f);
+        const hot = new THREE.Color(0xff241f);
+        mesh.userData.heatColor.copy(intensity <= 0.5
+          ? cold.lerp(medium, intensity * 2)
+          : medium.lerp(hot, (intensity - 0.5) * 2));
+        if (!count) mesh.userData.heatColor.multiplyScalar(0.52);
+      });
+      heatMapActive = mode === 'heat';
+      stage.classList.toggle('is-heat-map', mode === 'heat');
+      renderSelection();
+      mapAriaLabel = mode === 'heat'
+        ? `Температурная карта CTF за последние ${months} месяцев.`
+        : 'Интерактивная карта регионов России. Выберите регион.';
     }
 
     function applySelection(id: string | null, isSubsequent: boolean) {
@@ -499,6 +540,7 @@
       camera.lookAt(0, 0, -0.35);
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
+      clampViewport();
     }
 
     const resizeObserver = new ResizeObserver(resize);
@@ -515,6 +557,7 @@
           const current = getWorldPoint(e.clientX, e.clientY);
           if (current) {
             targetPosition.add(panAnchor.clone().sub(current));
+            clampViewport();
             panAnchor = current;
           }
           stage.classList.add('is-dragging');
@@ -574,22 +617,33 @@
           Math.abs(flag.scale.x - flag.userData.targetScale) > 0.002,
       );
       const moving =
+        (!reduceMotion && !pointerDown) ||
         pointerDown ||
         flagsMoving ||
         Math.abs(zoom - targetZoom) > 0.001 ||
         Math.abs(mapViewport.position.x - targetPosition.x) > 0.001 ||
         Math.abs(mapViewport.position.y - targetPosition.y) > 0.001 ||
-        meshes.some((mesh) => Math.abs(mesh.position.z - mesh.userData.targetLift) > 0.001);
-      const frameInterval = moving ? (compactDevice ? 33 : 16) : 200;
+        meshes.some((mesh) =>
+          Math.abs(mesh.position.z - mesh.userData.targetLift) > 0.001 ||
+          Math.abs(mesh.material.color.r - mesh.userData.targetColor.r) > 0.002 ||
+          Math.abs(mesh.material.color.g - mesh.userData.targetColor.g) > 0.002 ||
+          Math.abs(mesh.material.color.b - mesh.userData.targetColor.b) > 0.002
+        );
+      // Heat transitions stay at display refresh cadence even on compact devices.
+      const frameInterval = heatMapActive ? 16 : moving ? (compactDevice ? 33 : 16) : 200;
       if (time - lastFrame < frameInterval) return;
       const delta = Math.min((time - lastFrame) / 1000, 0.05) || 1 / 30;
       lastFrame = time;
       zoom = reduceMotion ? targetZoom : THREE.MathUtils.damp(zoom, targetZoom, 12, delta);
       mapViewport.scale.setScalar(zoom);
-      mapViewport.position.x = reduceMotion ? targetPosition.x : THREE.MathUtils.damp(mapViewport.position.x, targetPosition.x, 12, delta);
+      const driftX = reduceMotion || pointerDown ? 0 : Math.sin(time * 0.00018) * 0.18;
+      const desiredX = targetPosition.x + driftX;
+      mapViewport.position.x = reduceMotion ? targetPosition.x : THREE.MathUtils.damp(mapViewport.position.x, desiredX, 7, delta);
       mapViewport.position.y = reduceMotion ? targetPosition.y : THREE.MathUtils.damp(mapViewport.position.y, targetPosition.y, 12, delta);
       meshes.forEach((mesh) => {
         mesh.position.z = reduceMotion ? mesh.userData.targetLift : THREE.MathUtils.damp(mesh.position.z, mesh.userData.targetLift, 15, delta);
+        mesh.material.color.lerp(mesh.userData.targetColor, reduceMotion ? 1 : 1 - Math.exp(-4.5 * delta));
+        mesh.material.emissive.copy(mesh.material.color).multiplyScalar(heatMapActive ? 0.18 : 0.03);
       });
       flagLayer.children.forEach((flag) => {
         const target = flag.userData.targetPosition as THREE.Vector3;
@@ -598,6 +652,23 @@
         flag.position.y = reduceMotion ? target.y : THREE.MathUtils.damp(flag.position.y, target.y, 9, delta);
         const nextScale = reduceMotion ? targetScale : THREE.MathUtils.damp(flag.scale.x, targetScale, 10, delta);
         flag.scale.setScalar(nextScale);
+        const timing = flag.userData.timing as 'live' | 'soon' | 'calm';
+        const glowMaterial = flag.userData.glowMaterial as THREE.MeshBasicMaterial;
+        const clothMaterial = flag.userData.clothMaterial as THREE.MeshStandardMaterial;
+        if (timing === 'live') {
+          glowMaterial.opacity = 0.7;
+          clothMaterial.emissive.set(0xff2118);
+          clothMaterial.emissiveIntensity = 1.25;
+        } else if (timing === 'soon') {
+          const pulse = reduceMotion ? 0.5 : (Math.sin(time * 0.003 + flag.userData.phase) + 1) * 0.5;
+          glowMaterial.opacity = 0.18 + pulse * 0.38;
+          clothMaterial.emissive.set(0xff4b1f);
+          clothMaterial.emissiveIntensity = 0.4 + pulse * 0.55;
+        } else {
+          glowMaterial.opacity = 0;
+          clothMaterial.emissive.set(0x521006);
+          clothMaterial.emissiveIntensity = 1;
+        }
       });
       renderer.render(scene, camera);
       positionMarkers(camera);
@@ -625,6 +696,7 @@
     retryMap = () => void loadMap();
     applySelectionImpl = applySelection;
     rebuildMarkersImpl = rebuildMarkers;
+    applyHeatMapImpl = applyHeatMap;
 
     cleanup = () => {
       cancelAnimationFrame(rafId);
@@ -794,6 +866,13 @@
 
   :global(.marker--hot) .event-marker__pulse {
     animation-duration: 0.75s;
+  }
+
+  :global(.marker--live) .event-marker__pulse {
+    border-color: #ff3028;
+    opacity: 0.9;
+    animation-duration: 0.9s;
+    box-shadow: 0 0 18px rgba(255, 48, 40, 0.9);
   }
 
   .event-marker__label {

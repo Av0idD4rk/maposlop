@@ -27,6 +27,14 @@ class Command(BaseCommand):
             ("Ural CTF", "66", "Екатеринбург", 12, "Очные соревнования по веб-безопасности, реверсу и криптографии."),
             ("Siberia Attack & Defense", "54", "Новосибирск", 28, "Классический командный Attack & Defense с финалом на площадке."),
         ]
+        history = [
+            ("Moscow Winter CTF", "Москва", 18), ("Moscow Spring CTF", "Москва", 48),
+            ("Moscow Student CTF", "Москва", 93), ("Moscow Cyber Range", "Москва", 182),
+            ("Kazan Security Cup", "Казань", 35), ("Volga CTF Classic", "Казань", 150),
+            ("Piter Cyber Fest", "Санкт-Петербург", 24), ("Neva CTF", "Санкт-Петербург", 205),
+            ("Tomsk School CTF", "Томск", 70), ("Siberian CTF Archive", "Новосибирск", 310),
+            ("Far East CTF", "Владивосток", 120), ("Ural Security Games", "Екатеринбург", 520),
+        ]
         created = 0
         for title, region, city, days, description in samples:
             event, was_created = Event.objects.get_or_create(
@@ -43,6 +51,21 @@ class Command(BaseCommand):
                 },
             )
             if event.city_ref_id != cities[city].pk or event.region_code != cities[city].region_code:
+                event.city_ref = cities[city]
+                event.save(update_fields=("city_ref", "city", "region_code", "region_label"))
+            created += int(was_created)
+        for title, city, days_ago in history:
+            start = now - timedelta(days=days_ago)
+            event, was_created = Event.objects.get_or_create(
+                title=title,
+                defaults={
+                    "region_code": cities[city].region_code, "city_ref": cities[city],
+                    "starts_at": start, "ends_at": start + timedelta(hours=8),
+                    "description": "Историческое демонстрационное событие для температурной карты.",
+                    "format": Event.Format.OFFLINE, "published": True,
+                },
+            )
+            if event.city_ref_id != cities[city].pk:
                 event.city_ref = cities[city]
                 event.save(update_fields=("city_ref", "city", "region_code", "region_label"))
             created += int(was_created)

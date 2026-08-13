@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
-  import { reloadEvents } from '$lib/event-data';
+  import { reloadEvents, loadHeatEvents } from '$lib/event-data';
   import Topbar from '$lib/components/Topbar.svelte';
   import RegionPanel from '$lib/components/RegionPanel.svelte';
   import EventModal from '$lib/components/EventModal.svelte';
   import EventCatalog from '$lib/components/EventCatalog.svelte';
   import SuggestModal from '$lib/components/SuggestModal.svelte';
+  import HeatMapControls from '$lib/components/HeatMapControls.svelte';
+  import { mapMode } from '$lib/stores';
 
   let MapComponent = $state<Component | null>(null);
   let mapModuleError = $state(false);
@@ -22,13 +24,15 @@
 
   onMount(() => {
     void reloadEvents();
+    void loadHeatEvents();
     void loadMapModule();
   });
 </script>
 
 <a class="skip-link" href="#catalog-button">К списку событий</a>
-<main class="map-shell">
+<main class="map-shell" class:is-heat={$mapMode === 'heat'}>
   <Topbar />
+  <HeatMapControls />
   {#if MapComponent}
     <MapComponent />
   {:else if mapModuleError}
@@ -55,6 +59,18 @@
       radial-gradient(ellipse at 50% 52%, rgba(28, 84, 195, 0.22), transparent 48%),
       radial-gradient(circle at 7% 90%, rgba(0, 218, 255, 0.09), transparent 25rem),
       linear-gradient(135deg, #070a20, #040716 72%);
+    transition: background 600ms ease;
+  }
+
+  .map-shell.is-heat {
+    background:
+      radial-gradient(ellipse at 50% 52%, rgba(158, 45, 42, 0.22), transparent 50%),
+      radial-gradient(circle at 7% 90%, rgba(255, 117, 52, 0.1), transparent 25rem),
+      linear-gradient(135deg, #150b19, #090714 72%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .map-shell { transition: none; }
   }
 
   .map-shell::before {

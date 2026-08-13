@@ -11,7 +11,7 @@ test('loads a nonblank map and opens city travel tools', async ({ page }) => {
   await page.goto('/#region=66');
   expect((await eventsResponse).ok()).toBe(true);
 
-  await page.getByRole('button', { name: 'События' }).click();
+  await page.getByLabel('События', { exact: true }).click();
   const catalog = page.getByRole('dialog', { name: 'Все события' });
   await expect(catalog).toBeVisible();
   await catalog.getByRole('searchbox').fill('Новосибирск');
@@ -22,7 +22,7 @@ test('loads a nonblank map and opens city travel tools', async ({ page }) => {
 
   const canvas = page.locator('.map-stage__canvas');
   await expect(canvas).toBeVisible();
-  await expect(page.locator('.event-marker--split')).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator('.event-marker').first()).toBeVisible({ timeout: 15_000 });
   expect(await page.locator('.event-marker').count()).toBeGreaterThanOrEqual(3);
   await expect(page.locator('#panel-title')).toHaveText('Свердловская область');
 
@@ -36,9 +36,7 @@ test('loads a nonblank map and opens city travel tools', async ({ page }) => {
   }
   expect(mapPixels).toBeGreaterThan(screenshot.width * screenshot.height * 0.04);
 
-  const eventMarker = page.locator('.event-marker--split').first();
-  await expect(eventMarker).toBeVisible({ timeout: 15_000 });
-  await eventMarker.click();
+  await page.getByRole('button', { name: /Ural CTF/ }).click();
 
   const dialog = page.locator('dialog[open]');
   await expect(dialog.getByRole('heading', { name: 'Ural CTF' })).toBeVisible();

@@ -117,6 +117,7 @@ class EventSubmission(models.Model):
         DECLINED = "declined", "Отклонено"
 
     title = models.CharField("Название", max_length=160)
+    format = models.CharField("Формат", max_length=12, choices=Event.Format.choices, default=Event.Format.OFFLINE)
     region_code = models.CharField("Регион", max_length=3)
     region_label = models.CharField("Название региона", max_length=160, editable=False)
     city = models.CharField("Город", max_length=120, blank=True)
